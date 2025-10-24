@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Development environment
+  qybersafe-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: qybersafe-dev
+    volumes:
+      - .:/workspace
+      - qybersafe-build:/workspace/build
+      - qybersafe-python-build:/workspace/python/build
+    working_dir: /workspace
+    environment:
+      - CC=gcc
+      - CXX=g++
+      - CMAKE_BUILD_TYPE=Debug
+    stdin_open: true
+    tty: true
+    command: /bin/bash
+
+  # Testing environment
+  qybersafe-test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: qybersafe-test
+    volumes:
+      - .:/workspace
+      - qybersafe-build:/workspace/build
+    working_dir: /workspace
+    environment:
+      - CC=gcc
+      - CXX=g++
+      - CMAKE_BUILD_TYPE=Release
+    command: make ci
+
+  # Documentation builder
+  qybersafe-docs:
+    build:
+      context: .
+      dockerfile: Dockerfile.docs
+    container_name: qybersafe-docs
+    volumes:
+      - .:/workspace
+      - ./docs/html:/workspace/docs/html
+    working_dir: /workspace
+    command: make docs
+
+volumes:
+  qybersafe-build:
+  qybersafe-python-build:

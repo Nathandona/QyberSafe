@@ -1,0 +1,59 @@
+FROM ubuntu:22.04
+
+# Set non-interactive frontend for apt-get
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    pkg-config \
+    libssl-dev \
+    libgtest-dev \
+    libgmock-dev \
+    python3 \
+    python3-pip \
+    python3-dev \
+    clang-format \
+    cppcheck \
+    valgrind \
+    gdb \
+    vim \
+    curl \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip3 install --upgrade pip && \
+    pip3 install \
+    pybind11 \
+    pytest \
+    numpy \
+    black \
+    flake8 \
+    mypy
+
+# Build and install Google Test
+RUN cd /usr/src/googletest && \
+    cmake . -DCMAKE_BUILD_TYPE=Release && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
+# Set up workspace
+WORKDIR /workspace
+
+# Create non-root user for development
+RUN useradd -m -s /bin/bash qybersafe && \
+    chown -R qybersafe:qybersafe /workspace
+
+USER qybersafe
+
+# Set up default environment
+ENV CC=gcc
+ENV CXX=g++
+ENV PYTHONPATH=/workspace/python
+
+# Default command
+CMD ["/bin/bash"]

@@ -1,0 +1,216 @@
+name: QyberSafe CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            cc: gcc-11
+            cxx: g++-11
+            install_deps: sudo apt-get update && sudo apt-get install -y libssl-dev
+          - os: windows-latest
+            cc: cl
+            cxx: cl
+            install_deps: vcpkg install openssl:x64-windows
+          - os: macos-latest
+            cc: clang
+            cxx: clang++
+            install_deps: brew install openssl
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v1.14
+
+    - name: Install dependencies (Ubuntu)
+      if: runner.os == 'Linux'
+      run: ${{ matrix.install_deps }}
+
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew update
+        brew install openssl
+
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        vcpkg integrate install
+        vcpkg install openssl:x64-windows
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pybind11[global] pytest numpy
+
+    - name: Configure CMake
+      run: |
+        cmake -B ${{github.workspace}}/build \
+          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+          -DCMAKE_C_COMPILER=${{ matrix.cc }} \
+          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
+          -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/install
+
+    - name: Build
+      run: |
+        cmake --build ${{github.workspace}}/build \
+          --config ${{env.BUILD_TYPE}} \
+          --parallel
+
+    - name: Test C++
+      run: |
+        cd ${{github.workspace}}/build
+        ctest --output-on-failure --parallel
+
+    - name: Build Python bindings
+      run: |
+        cd python
+        python setup.py build_ext --inplace
+
+    - name: Test Python
+      run: |
+        cd python
+        python -m pytest -v tests/
+
+    - name: Install (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        cd ${{github.workspace}}/build
+        sudo make install
+
+    - name: Install (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        cd ${{github.workspace}}/build
+        cmake --install . --config ${{env.BUILD_TYPE}}
+
+  security-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run security audit
+      run: |
+        # Basic security checks
+        find . -name "*.cpp" -o -name "*.h" | xargs grep -l "strcpy\|strcat\|sprintf\|gets" && exit 1 || true
+
+        # Check for common security issues
+        find . -name "*.cpp" -o -name "*.h" | xargs grep -l "malloc\|free" && echo "Warning: malloc/free detected" || true
+
+        # Check for hardcoded credentials (basic)
+        find . -name "*.cpp" -o -name "*.h" -o -name "*.py" | xargs grep -i "password\|secret\|key.*=" && echo "Warning: potential hardcoded credentials" || true
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup clang-format
+      uses: DoozyX/clang-format-lint-action@v0.16
+      with:
+        source: '.'
+        extensions: 'h,cpp'
+        clangFormatVersion: 14
+
+    - name: Run cppcheck
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cppcheck
+        cppcheck --enable=all --inconclusive --error-exitcode=1 src/
+
+  memory-safety:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y valgrind libssl-dev
+
+    - name: Build with debug symbols
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
+        cmake --build build --parallel
+
+    - name: Run tests with Valgrind
+      run: |
+        cd build
+        valgrind --leak-check=full --error-exitcode=1 ./tests/qybersafe_tests
+
+  benchmark:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libssl-dev
+
+    - name: Build release version
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --parallel
+
+    - name: Run benchmarks
+      run: |
+        cd build
+        make run_benchmarks || echo "Benchmark target not found"
+
+    - name: Store benchmark results
+      uses: benchmark-action/github-action-benchmark@v1
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      with:
+        tool: 'cpp'
+        output-file-path: benchmarks/results.json
+
+  build-docs:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Doxygen
+      uses: jwlawson/actions-setup-doxygen@v1.1.0
+
+    - name: Generate documentation
+      run: |
+        doxygen Doxyfile || echo "Doxyfile not found, skipping docs generation"
+
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs/html
