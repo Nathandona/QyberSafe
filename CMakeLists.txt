@@ -93,6 +93,9 @@ if(BUILD_EXAMPLES)
     endif()
 endif()
 
+# Installation configuration
+include(GNUInstallDirs)
+
 # Static analysis configuration
 find_program(CLANG_TIDY_PATH clang-tidy)
 if(CLANG_TIDY_PATH)
@@ -102,8 +105,37 @@ if(CLANG_TIDY_PATH)
     endif()
 endif()
 
-# Installation configuration
-include(GNUInstallDirs)
+# Documentation configuration
+find_package(Doxygen QUIET)
+if(DOXYGEN_FOUND)
+    option(BUILD_DOCUMENTATION "Create and install the HTML based API documentation (requires Doxygen)" ON)
+    if(BUILD_DOCUMENTATION)
+        # Set input and output files
+        set(DOXYGEN_IN ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile)
+        set(DOXYGEN_OUT ${CMAKE_CURRENT_BINARY_DIR}/Doxyfile)
+
+        # Request to configure the file
+        configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
+
+        # Note: The variable "DOXYGEN_OUTPUT_DIR" is a custom variable we use
+        # to get the configured Doxyfile in a directory that is cleaned upon
+        # "make clean"
+        file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs)
+
+        # Add the documentation target
+        add_custom_target(docs
+            ${DOXYGEN_EXECUTABLE} ${DOXYGEN_OUT}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Generating API documentation with Doxygen"
+            VERBATIM
+        )
+
+        # Install the documentation
+        install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/docs/html
+                DESTINATION ${CMAKE_INSTALL_DOCDIR}
+                OPTIONAL)
+    endif()
+endif()
 
 # Install the library
 install(TARGETS qybersafe
@@ -168,5 +200,6 @@ message(STATUS "  Install prefix: ${CMAKE_INSTALL_PREFIX}")
 message(STATUS "  Build tests: ${BUILD_TESTS}")
 message(STATUS "  Build benchmarks: ${BUILD_BENCHMARKS}")
 message(STATUS "  Build examples: ${BUILD_EXAMPLES}")
+message(STATUS "  Build documentation: ${BUILD_DOCUMENTATION}")
 message(STATUS "  Enable clang-tidy: ${ENABLE_CLANG_TIDY}")
 message(STATUS "")
