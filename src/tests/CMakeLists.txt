@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 # Find GoogleTest
-find_package(GTest REQUIRED)
+find_package(GTest QUIET)
 
 # Enable testing
 enable_testing()
@@ -18,43 +18,48 @@ set(TEST_SOURCES
     test_memory.cpp
 )
 
-# Create test executable
-add_executable(qybersafe_tests ${TEST_SOURCES})
+# Only create tests if GTest is found
+if(GTest_FOUND)
+    # Create test executable
+    add_executable(qybersafe_tests ${TEST_SOURCES})
 
-# Link libraries
-target_link_libraries(qybersafe_tests
-    GTest::GTest
-    GTest::Main
-    qybersafe
-    OpenSSL::SSL
-    OpenSSL::Crypto
-)
+    # Link libraries
+    target_link_libraries(qybersafe_tests
+        GTest::GTest
+        GTest::Main
+        qybersafe
+        OpenSSL::SSL
+        OpenSSL::Crypto
+    )
 
-# Add include directories
-target_include_directories(qybersafe_tests PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
+    # Add include directories
+    target_include_directories(qybersafe_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
 
-# Set compiler flags for tests
-target_compile_options(qybersafe_tests PRIVATE
-    $<$<CONFIG:Debug>:-g -O0 -DDEBUG>
-    $<$<CONFIG:Release>:-O2 -DNDEBUG>
-    -Wall -Wextra -Wpedantic
-)
+    # Set compiler flags for tests
+    target_compile_options(qybersafe_tests PRIVATE
+        $<$<CONFIG:Debug>:-g -O0 -DDEBUG>
+        $<$<CONFIG:Release>:-O2 -DNDEBUG>
+        -Wall -Wextra -Wpedantic
+    )
 
-# Add tests
-add_test(NAME AllTests COMMAND qybersafe_tests)
+    # Add tests
+    add_test(NAME AllTests COMMAND qybersafe_tests)
 
-# Individual test targets
-foreach(TEST_FILE ${TEST_SOURCES})
-    get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
-    add_test(NAME ${TEST_NAME} COMMAND qybersafe_tests --gtest_filter=${TEST_NAME}.*)
-endforeach()
+    # Individual test targets
+    foreach(TEST_FILE ${TEST_SOURCES})
+        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
+        add_test(NAME ${TEST_NAME} COMMAND qybersafe_tests --gtest_filter=${TEST_NAME}.*)
+    endforeach()
 
-# Custom target to run all tests
-add_custom_target(run_tests
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS qybersafe_tests
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Running all QyberSafe tests"
-)
+    # Custom target to run all tests
+    add_custom_target(run_tests
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+        DEPENDS qybersafe_tests
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        COMMENT "Running all QyberSafe tests"
+    )
+else()
+    message(STATUS "GTest not found - skipping tests")
+endif()

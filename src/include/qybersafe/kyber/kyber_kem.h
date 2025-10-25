@@ -3,31 +3,34 @@
 
 #include <vector>
 #include <memory>
-#include "../core/crypto_types.h"
+#include "qybersafe/core/crypto_types.h"
 
 namespace qybersafe::kyber {
 
+using core::SecurityLevel;
+using core::bytes;
+
 class PublicKey {
 public:
-    explicit PublicKey(const bytes& data);
+    explicit PublicKey(const core::bytes& data);
 
-    const bytes& data() const { return data_; }
-    size_t size() const { return data_.size(); }
+    const core::bytes& data() const;
+    size_t size() const;
 
     bool is_valid() const;
 
 private:
-    bytes data_;
+    core::bytes data_;
     mutable bool validity_checked_{false};
     mutable bool is_valid_{false};
 };
 
 class PrivateKey {
 public:
-    explicit PrivateKey(const bytes& data);
+    explicit PrivateKey(const core::bytes& data);
 
-    const bytes& data() const { return data_; }
-    size_t size() const { return data_.size(); }
+    const core::bytes& data() const;
+    size_t size() const;
 
     bool is_valid() const;
 
@@ -35,7 +38,7 @@ public:
     PublicKey get_public_key() const;
 
 private:
-    bytes data_;
+    core::bytes data_;
     mutable bool validity_checked_{false};
     mutable bool is_valid_{false};
 };
@@ -44,8 +47,8 @@ class KeyPair {
 public:
     KeyPair(PublicKey public_key, PrivateKey private_key);
 
-    const PublicKey& public_key() const { return public_key_; }
-    const PrivateKey& private_key() const { return private_key_; }
+    const PublicKey& public_key() const;
+    const PrivateKey& private_key() const;
 
 private:
     PublicKey public_key_;
@@ -53,19 +56,19 @@ private:
 };
 
 // Core Kyber functions
-KeyPair generate_keypair(core::SecurityLevel level = core::SecurityLevel::MEDIUM);
+KeyPair generate_keypair(core::SecurityLevel level = core::SecurityLevel::KYBER_768);
 
-bytes encrypt(const PublicKey& public_key, const bytes& plaintext);
-Result<bytes> decrypt(const PrivateKey& private_key, const bytes& ciphertext);
+core::bytes encrypt(const PublicKey& public_key, const core::bytes& plaintext);
+core::Result<core::bytes> decrypt(const PrivateKey& private_key, const core::bytes& ciphertext);
 
 // KEM interface
-Result<std::pair<bytes, bytes>> encapsulate(const PublicKey& public_key);
-Result<bytes> decapsulate(const PrivateKey& private_key, const bytes& ciphertext);
+core::Result<std::pair<core::bytes, core::bytes>> encapsulate(const PublicKey& public_key);
+core::Result<core::bytes> decapsulate(const PrivateKey& private_key, const core::bytes& ciphertext);
 
 // Utility functions
-size_t get_public_key_size(core::SecurityLevel level);
-size_t get_private_key_size(core::SecurityLevel level);
-size_t get_ciphertext_size(core::SecurityLevel level);
+size_t get_public_key_size(SecurityLevel level);
+size_t get_private_key_size(SecurityLevel level);
+size_t get_ciphertext_size(SecurityLevel level);
 size_t get_shared_secret_size();
 
 } // namespace qybersafe::kyber

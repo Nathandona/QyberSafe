@@ -3,29 +3,98 @@ Kyber Key Encapsulation Mechanism (KEM)
 
 Kyber is a lattice-based key encapsulation mechanism selected for standardization
 by NIST as part of the PQC standardization process.
+
+This module provides a high-level Python interface for Kyber operations
+including key generation, encryption/decryption, and KEM operations.
 """
 
-from typing import Tuple, Optional
+from __future__ import annotations
+
+from typing import Tuple, Optional, Union, Final
+from dataclasses import dataclass
+
 from . import _core
-from .exceptions import QyberSafeError
+from .exceptions import (
+    QyberSafeError,
+    KeyGenerationError,
+    EncryptionError,
+    DecryptionError,
+    InvalidKeyError,
+    InvalidParameterError,
+)
 
 
+@dataclass(frozen=True)
 class KyberKeyPair:
-    """Kyber key pair containing public and private keys."""
+    """Kyber key pair containing public and private keys.
 
-    def __init__(self, public_key: bytes, private_key: bytes):
-        self.public_key = public_key
-        self.private_key = private_key
+    This class is immutable to ensure key security. Keys are stored as bytes
+    and cannot be modified after creation.
+    """
+    public_key: bytes
+    private_key: bytes
+
+    def __post_init__(self) -> None:
+        """Validate key pair after initialization."""
+        if not isinstance(self.public_key, (bytes, bytearray)):
+            raise InvalidKeyError("Public key must be bytes")
+        if not isinstance(self.private_key, (bytes, bytearray)):
+            raise InvalidKeyError("Private key must be bytes")
+        if len(self.public_key) == 0:
+            raise InvalidKeyError("Public key cannot be empty")
+        if len(self.private_key) == 0:
+            raise InvalidKeyError("Private key cannot be empty")
 
     def __repr__(self) -> str:
-        return f"KyberKeyPair(public_key_len={len(self.public_key)}, private_key_len={len(self.private_key)})"
+        """Return a string representation that doesn't expose key material."""
+        return (f"KyberKeyPair(public_key_len={len(self.public_key)}, "
+                f"private_key_len={len(self.private_key)})")
+
+    def __str__(self) -> str:
+        """Return a safe string representation."""
+        return self.__repr__()
 
 
 class SecurityLevel:
-    """Kyber security levels."""
-    KYBER512 = 1    # ~128-bit quantum security
-    KYBER768 = 2    # ~192-bit quantum security (recommended)
-    KYBER1024 = 3   # ~256-bit quantum security
+    """
+    Kyber security levels.
+
+    These constants define the security levels for Kyber operations:
+    - KYBER512: ~128-bit quantum security, fastest performance
+    - KYBER768: ~192-bit quantum security, recommended balance
+    - KYBER1024: ~256-bit quantum security, highest security
+    """
+    KYBER512: Final[int] = 1    # ~128-bit quantum security
+    KYBER768: Final[int] = 2    # ~192-bit quantum security (recommended)
+    KYBER1024: Final[int] = 3   # ~256-bit quantum security
+
+    # Mapping for validation
+    _VALID_LEVELS = {KYBER512, KYBER768, KYBER1024}
+
+    @classmethod
+    def is_valid(cls, level: int) -> bool:
+        """Check if a security level is valid."""
+        return level in cls._VALID_LEVELS
+
+    @classmethod
+    def get_name(cls, level: int) -> str:
+        """Get the name of a security level."""
+        names = {
+            cls.KYBER512: "Kyber512",
+            cls.KYBER768: "Kyber768",
+            cls.KYBER1024: "Kyber1024",
+        }
+        return names.get(level, "Unknown")
+
+    @classmethod
+    def get_description(cls, level: int) -> str:
+        """Get the description of a security level."""
+        descriptions = {
+            cls.KYBER512: "~128-bit quantum security",
+            cls.KYBER768: "~192-bit quantum security (recommended)",
+            cls.KYBER1024: "~256-bit quantum security",
+        }
+        return descriptions.get(level, "Unknown security level")
 
 
 def generate_keypair(level: int = SecurityLevel.KYBER768) -> KyberKeyPair:
@@ -39,16 +108,25 @@ def generate_keypair(level: int = SecurityLevel.KYBER768) -> KyberKeyPair:
         KyberKeyPair: The generated key pair
 
     Raises:
-        QyberSafeError: If key generation fails
+        InvalidParameterError: If the security level is invalid
+        KeyGenerationError: If key generation fails
     """
+    if not SecurityLevel.is_valid(level):
+        raise InvalidParameterError(
+            f"Invalid security level: {level}. "
+            f"Valid levels are: {', '.join(str(l) for l in SecurityLevel._VALID_LEVELS)}"
+        )
+
     try:
         public_key, private_key = _core.kyber_generate_keypair(level)
         return KyberKeyPair(public_key, private_key)
     except Exception as e:
-        raise QyberSafeError(f"Failed to generate Kyber key pair: {e}") from e
+        raise KeyGenerationError(
+            f"Failed to generate Kyber key pair with {SecurityLevel.get_name(level)}: {e}"
+        ) from e
 
 
-def encrypt(public_key: bytes, plaintext: bytes) -> bytes:
+def encrypt(public_key: Union[bytes, bytearray], plaintext: Union[bytes, bytearray]) -> bytes:
     """
     Encrypt data using Kyber.
 
@@ -60,15 +138,27 @@ def encrypt(public_key: bytes, plaintext: bytes) -> bytes:
         bytes: The encrypted ciphertext
 
     Raises:
-        QyberSafeError: If encryption fails
+        InvalidKeyError: If the public key is invalid
+        InvalidParameterError: If the plaintext is invalid
+        EncryptionError: If encryption fails
     """
+    if not isinstance(public_key, (bytes, bytearray)):
+        raise InvalidKeyError("Public key must be bytes or bytearray")
+    if len(public_key) == 0:
+        raise InvalidKeyError("Public key cannot be empty")
+
+    if not isinstance(plaintext, (bytes, bytearray)):
+        raise InvalidParameterError("Plaintext must be bytes or bytearray")
+    if len(plaintext) == 0:
+        raise InvalidParameterError("Plaintext cannot be empty")
+
     try:
-        return _core.kyber_encrypt(public_key, plaintext)
+        return _core.kyber_encrypt(bytes(public_key), bytes(plaintext))
     except Exception as e:
-        raise QyberSafeError(f"Kyber encryption failed: {e}") from e
+        raise EncryptionError(f"Kyber encryption failed: {e}") from e
 
 
-def decrypt(private_key: bytes, ciphertext: bytes) -> bytes:
+def decrypt(private_key: Union[bytes, bytearray], ciphertext: Union[bytes, bytearray]) -> bytes:
     """
     Decrypt data using Kyber.
 
@@ -80,12 +170,24 @@ def decrypt(private_key: bytes, ciphertext: bytes) -> bytes:
         bytes: The decrypted plaintext
 
     Raises:
-        QyberSafeError: If decryption fails
+        InvalidKeyError: If the private key is invalid
+        InvalidParameterError: If the ciphertext is invalid
+        DecryptionError: If decryption fails
     """
+    if not isinstance(private_key, (bytes, bytearray)):
+        raise InvalidKeyError("Private key must be bytes or bytearray")
+    if len(private_key) == 0:
+        raise InvalidKeyError("Private key cannot be empty")
+
+    if not isinstance(ciphertext, (bytes, bytearray)):
+        raise InvalidParameterError("Ciphertext must be bytes or bytearray")
+    if len(ciphertext) == 0:
+        raise InvalidParameterError("Ciphertext cannot be empty")
+
     try:
-        return _core.kyber_decrypt(private_key, ciphertext)
+        return _core.kyber_decrypt(bytes(private_key), bytes(ciphertext))
     except Exception as e:
-        raise QyberSafeError(f"Kyber decryption failed: {e}") from e
+        raise DecryptionError(f"Kyber decryption failed: {e}") from e
 
 
 def encapsulate(public_key: bytes) -> Tuple[bytes, bytes]:

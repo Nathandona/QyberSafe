@@ -3,85 +3,70 @@
 
 #include <vector>
 #include <memory>
-#include "../core/crypto_types.h"
+#include "qybersafe/core/crypto_types.h"
 
 namespace qybersafe::sphincsplus {
 
-class PublicKey {
-public:
-    explicit PublicKey(const bytes& data);
+using core::SecurityLevel;
+using core::bytes;
 
-    const bytes& data() const { return data_; }
-    size_t size() const { return data_.size(); }
+class SPHINCSPublicKey {
+public:
+    explicit SPHINCSPublicKey(const core::bytes& data);
+
+    const core::bytes& data() const;
+    size_t size() const;
 
     bool is_valid() const;
 
 private:
-    bytes data_;
+    core::bytes data_;
     mutable bool validity_checked_{false};
     mutable bool is_valid_{false};
 };
 
-class PrivateKey {
+class SPHINCSPrivateKey {
 public:
-    explicit PrivateKey(const bytes& data);
+    explicit SPHINCSPrivateKey(const core::bytes& data);
 
-    const bytes& data() const { return data_; }
-    size_t size() const { return data_.size(); }
+    const core::bytes& data() const;
+    size_t size() const;
 
     bool is_valid() const;
 
     // Derive public key from private key
-    PublicKey get_public_key() const;
+    SPHINCSPublicKey get_public_key() const;
 
 private:
-    bytes data_;
+    core::bytes data_;
     mutable bool validity_checked_{false};
     mutable bool is_valid_{false};
 };
 
-class KeyPair {
+class SPHINCSKeyPair {
 public:
-    KeyPair(PublicKey public_key, PrivateKey private_key);
+    SPHINCSKeyPair(SPHINCSPublicKey public_key, SPHINCSPrivateKey private_key);
 
-    const PublicKey& public_key() const { return public_key_; }
-    const PrivateKey& private_key() const { return private_key_; }
+    const SPHINCSPublicKey& public_key() const;
+    const SPHINCSPrivateKey& private_key() const;
 
 private:
-    PublicKey public_key_;
-    PrivateKey private_key_;
+    SPHINCSPublicKey public_key_;
+    SPHINCSPrivateKey private_key_;
 };
 
 // Core SPHINCS+ functions
-KeyPair generate_keypair(core::SecurityLevel level = core::SecurityLevel::MEDIUM);
+SPHINCSKeyPair generate_keypair(SecurityLevel level = SecurityLevel::SPHINCS_192);
 
-Result<bytes> sign(const PrivateKey& private_key, const bytes& message);
-bool verify(const PublicKey& public_key, const bytes& message, const bytes& signature);
+core::bytes sign(const SPHINCSPrivateKey& private_key, const core::bytes& message);
+bool verify(const SPHINCSPublicKey& public_key, const core::bytes& message, const core::bytes& signature);
 
 // Utility functions
-size_t get_public_key_size(core::SecurityLevel level);
-size_t get_private_key_size(core::SecurityLevel level);
-size_t get_signature_size(core::SecurityLevel level);
+size_t get_public_key_size(SecurityLevel level);
+size_t get_private_key_size(SecurityLevel level);
+size_t get_signature_size(SecurityLevel level);
 
-// SPHINCS+ specific parameters
-enum class HashFunction {
-    SHA256,
-    SHAKE256,
-    HARAKA
-};
 
-struct Parameters {
-    SecurityLevel level;
-    HashFunction hash_func;
-    size_t n;      // State size
-    size_t w;      // Winternitz parameter
-    size_t h;      // Height of hypertree
-    size_t d;      // Layers of hypertree
-    size_t k;      // Number of FORS trees
-    size_t t;      // Number of FORS messages
-};
-
-Parameters get_parameters(SecurityLevel level, HashFunction hash_func = HashFunction::SHAKE256);
 
 } // namespace qybersafe::sphincsplus
 

@@ -12,6 +12,7 @@ class SecureRandom {
 public:
     // Singleton access
     static SecureRandom& instance();
+    static void set_instance(SecureRandom* instance);
 
     // Generate random bytes
     Result<bytes> generate_bytes(size_t count);
@@ -31,10 +32,7 @@ public:
     // Fill existing buffer with random bytes
     Result<void> fill_bytes(void* buffer, size_t size);
 
-    // Seed the random number generator (for testing only)
-    void seed_for_testing(const bytes& seed);
-
-    // Reinitialize with system entropy
+  // Reinitialize with system entropy
     Result<void> reinitialize();
 
     // Check if the generator is properly initialized
@@ -48,6 +46,9 @@ private:
     SecureRandom();
     ~SecureRandom();
 
+    // Friend declarations for singleton management
+    friend struct SecureRandomDeleter;
+
     bool initialized_;
     std::unique_ptr<uint8_t[]> state_;
 
@@ -60,6 +61,14 @@ private:
     // Generate entropy from system sources
     Result<bytes> get_system_entropy(size_t count);
 };
+
+// Global convenience functions
+Result<bytes> random_bytes(size_t count);
+Result<uint32_t> random_uint32();
+Result<uint64_t> random_uint64();
+Result<uint32_t> random_range(uint32_t min, uint32_t max);
+Result<bool> random_bool();
+Result<void> fill_random(void* buffer, size_t size);
 
 } // namespace qybersafe::core
 
