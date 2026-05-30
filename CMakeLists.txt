@@ -50,9 +50,16 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     endif()
     add_compile_definitions(DEBUG_BUILD)
 elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
-    # Optimizations for release builds
+    # Optimizations for release builds. -march=native is opt-in and off by
+    # default: it bakes the building machine's instruction set into the binary,
+    # which is wrong for distributable artifacts such as Python wheels (they
+    # would crash on other CPUs).
+    option(QYBERSAFE_NATIVE_ARCH "Optimize for the building machine's CPU (-march=native)" OFF)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        add_compile_options(-O3 -march=native)
+        add_compile_options(-O3)
+        if(QYBERSAFE_NATIVE_ARCH)
+            add_compile_options(-march=native)
+        endif()
     endif()
     add_compile_definitions(NDEBUG)
 endif()

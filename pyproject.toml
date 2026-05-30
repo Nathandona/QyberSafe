@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "qybersafe"
-version = "0.1.0"
+version = "0.1.0a1"
 description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -70,3 +70,5 @@ test-command = "python -m pytest {project}/python/tests"
 # that QyberSafe needs (manylinux2014 / CentOS 7 ships OpenSSL 1.0.2, too old).
 manylinux-x86_64-image = "manylinux_2_28"
 before-all = "dnf install -y openssl-devel"
+# Verbose repair lists offending symbols if auditwheel cannot retarget the ABI.
+repair-wheel-command = "auditwheel -v repair -w {dest_dir} {wheel}"

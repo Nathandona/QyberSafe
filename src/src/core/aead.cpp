@@ -1,13 +1,26 @@
 #include "qybersafe/core/aead.h"
 
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/kdf.h>
 #include <openssl/rand.h>
 
 #include <memory>
 #include <stdexcept>
+#include <string>
 
 namespace qybersafe::core {
+
+namespace {
+// Last OpenSSL error as a string, for diagnostics in exception messages.
+std::string openssl_error() {
+    const unsigned long code = ERR_get_error();
+    if (code == 0) return "no OpenSSL error on the queue";
+    char buf[256];
+    ERR_error_string_n(code, buf, sizeof(buf));
+    return buf;
+}
+}  // namespace
 
 bytes hkdf_sha256(const bytes& ikm, const bytes& info, size_t out_len) {
     std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ctx(
@@ -18,7 +31,7 @@ bytes hkdf_sha256(const bytes& ikm, const bytes& info, size_t out_len) {
                                    static_cast<int>(ikm.size())) <= 0 ||
         EVP_PKEY_CTX_add1_hkdf_info(ctx.get(), info.data(),
                                     static_cast<int>(info.size())) <= 0) {
-        throw std::runtime_error("HKDF setup failed");
+        throw std::runtime_error("HKDF setup failed: " + openssl_error());
     }
     bytes out(out_len);
     size_t len = out_len;
