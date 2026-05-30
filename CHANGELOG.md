@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with opaque keys, self-describing serialization, and a `CryptoError` exception
   model. The lower-level per-algorithm modules remain available.
 - Associated-data (AAD) support for hybrid encryption / `seal`.
+- Python bindings (pybind11) for the envelope API: `seal`/`open`, `sign`/`verify`,
+  opaque keys with `to_bytes`/`from_bytes`, and a `CryptoError` exception. Built
+  via CMake (`-DQYBERSAFE_BUILD_PYTHON=ON`); a CI job builds the module and runs
+  the pytest suite.
 - LICENSE file (MIT).
 
 ### Changed
@@ -31,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - The non-secure "simplified for demonstration" lattice code that stood in for Kyber.
+- Stale toy Python submodules (kyber.py, exceptions.py) and the pre-liboqs
+  setup.py; pip packaging returns in the packaging milestone.
 
 ### Fixed
 - Secure aligned allocation now works on Windows (MinGW/MSVC), not only POSIX.

@@ -103,3 +103,36 @@ jobs:
           source: 'src/src/kyber src/src/core src/include'
           extensions: 'h,cpp'
           clangFormatVersion: 18
+
+  python:
+    name: python bindings (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev ninja-build
+          python -m pip install --upgrade pip pybind11 pytest
+
+      - name: Build the Python module
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_DOCUMENTATION=OFF \
+            -DENABLE_CLANG_TIDY=OFF \
+            -DQYBERSAFE_BUILD_PYTHON=ON \
+            -Dpybind11_DIR=$(python -m pybind11 --cmakedir)
+          cmake --build build --target qybersafe_python --parallel
+
+      - name: Test
+        run: |
+          cd python
+          PYTHONPATH=. python -m pytest -v tests/

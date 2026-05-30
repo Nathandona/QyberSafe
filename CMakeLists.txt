@@ -60,6 +60,13 @@ endif()
 # Find dependencies
 find_package(OpenSSL REQUIRED)
 
+# The Python module links the static library and liboqs into a shared object,
+# so everything must be position-independent. Set this before liboqs is fetched.
+option(QYBERSAFE_BUILD_PYTHON "Build the pybind11 Python module" OFF)
+if(QYBERSAFE_BUILD_PYTHON)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # Fetch and build liboqs (provides the post-quantum primitives)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(liboqs)
