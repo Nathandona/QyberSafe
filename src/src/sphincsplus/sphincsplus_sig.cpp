@@ -11,9 +11,10 @@
  * @file sphincsplus_sig.cpp
  * @brief SLH-DSA (SPHINCS+) hash-based signatures, backed by liboqs.
  *
- * Wraps liboqs' SLH-DSA (FIPS 205), using the "pure" SHA2 small-signature
- * variants. The previous from-scratch code was a non-secure placeholder and has
- * been removed.
+ * Wraps liboqs' SPHINCS+ SHA2 small-signature "simple" variants (the SLH-DSA /
+ * FIPS 205 family). These are used in preference to liboqs' slh_dsa_pure_*
+ * variants because the latter do not verify under MSVC/Windows in liboqs 0.15.0.
+ * The previous from-scratch code was a non-secure placeholder and was removed.
  */
 
 namespace qybersafe::sphincsplus {
@@ -27,13 +28,13 @@ const char* alg_name(SecurityLevel level) {
     switch (level) {
         case SecurityLevel::SPHINCS_128:
         case SecurityLevel::LOW:
-            return OQS_SIG_alg_slh_dsa_pure_sha2_128s;
+            return OQS_SIG_alg_sphincs_sha2_128s_simple;
         case SecurityLevel::SPHINCS_192:
         case SecurityLevel::MEDIUM:
-            return OQS_SIG_alg_slh_dsa_pure_sha2_192s;
+            return OQS_SIG_alg_sphincs_sha2_192s_simple;
         case SecurityLevel::SPHINCS_256:
         case SecurityLevel::HIGH:
-            return OQS_SIG_alg_slh_dsa_pure_sha2_256s;
+            return OQS_SIG_alg_sphincs_sha2_256s_simple;
         default:
             throw std::invalid_argument("Unsupported SLH-DSA security level");
     }
