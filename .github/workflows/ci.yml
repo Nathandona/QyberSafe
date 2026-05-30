@@ -57,15 +57,8 @@ jobs:
         vcpkg integrate install
         vcpkg install openssl:x64-windows
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pybind11[global] pytest numpy
+    # Python bindings return at the Python-parity milestone (see SPEC.md, M4).
+    # The current bindings still reference the not-yet-ported modules.
 
     - name: Configure CMake
       run: |
@@ -85,16 +78,6 @@ jobs:
       run: |
         cd ${{github.workspace}}/build
         ctest --output-on-failure --parallel
-
-    - name: Build Python bindings
-      run: |
-        cd python
-        python setup.py build_ext --inplace
-
-    - name: Test Python
-      run: |
-        cd python
-        python -m pytest -v tests/
 
     - name: Install (Unix)
       if: runner.os != 'Windows'

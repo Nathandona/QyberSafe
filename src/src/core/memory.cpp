@@ -13,6 +13,7 @@
 #include <unistd.h>
 #elif defined(_WIN32)
 #include <windows.h>
+#include <malloc.h>
 #endif
 
 namespace qybersafe::core {
@@ -21,7 +22,14 @@ namespace qybersafe::core {
 class SecureMemory {
 public:
     static void* allocate(size_t size) {
-        void* ptr = std::aligned_alloc(64, size);  // Align for cache line
+        constexpr size_t kAlign = 64;  // Align for cache line
+#if defined(_WIN32)
+        void* ptr = _aligned_malloc(size, kAlign);
+#else
+        // std::aligned_alloc requires the size to be a multiple of alignment.
+        const size_t aligned_size = (size + kAlign - 1) & ~(kAlign - 1);
+        void* ptr = std::aligned_alloc(kAlign, aligned_size);
+#endif
         if (!ptr) {
             throw std::bad_alloc();
         }
@@ -31,7 +39,11 @@ public:
     static void deallocate(void* ptr, size_t size) {
         if (ptr) {
             secure_zero_memory(ptr, size);
+#if defined(_WIN32)
+            _aligned_free(ptr);
+#else
             std::free(ptr);
+#endif
         }
     }
 

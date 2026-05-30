@@ -1,372 +1,409 @@
 #include "qybersafe/kyber/kyber_kem.h"
-#include "qybersafe/core/secure_random.h"
-#include "qybersafe/utils/hex.h"
-#include <stdexcept>
-#include <cstring>
+
+#include <oqs/oqs.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/rand.h>
+
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <utility>
+
+/**
+ * @file kyber_kem.cpp
+ * @brief ML-KEM (Kyber) key encapsulation, backed by liboqs.
+ *
+ * This module wraps liboqs' ML-KEM (FIPS 203) implementation. The previous
+ * from-scratch lattice code was a non-secure placeholder and has been removed.
+ *
+ * encapsulate()/decapsulate() expose the raw KEM. encrypt()/decrypt() provide a
+ * convenience KEM-DEM (ML-KEM encapsulation feeding an AES-256-GCM data
+ * encryption, with the data key derived via HKDF-SHA-256). The canonical
+ * encryption surface for applications is the hybrid envelope API (see SPEC.md);
+ * this KEM-DEM is the single-algorithm convenience path.
+ */
 
 namespace qybersafe::kyber {
 
 using core::SecurityLevel;
 using core::bytes;
-using core::KYBER_PUBLIC_KEY_512;
-using core::KYBER_PUBLIC_KEY_768;
-using core::KYBER_PUBLIC_KEY_1024;
-using core::KYBER_PRIVATE_KEY_512;
-using core::KYBER_PRIVATE_KEY_768;
-using core::KYBER_PRIVATE_KEY_1024;
-using core::KYBER_CIPHERTEXT_512;
-using core::KYBER_CIPHERTEXT_768;
-using core::KYBER_CIPHERTEXT_1024;
 
-// Kyber parameter sets
 namespace {
-    struct KyberParams {
-        int k;  // Security parameter
-        int n;  // Polynomial degree
-        int q;  // Modulus
-        int eta1; // Noise parameter
-        int eta2; // Noise parameter
-        int du;  // Encoding parameter
-        int dv;  // Encoding parameter
-        size_t public_key_size;
-        size_t private_key_size;
-        size_t ciphertext_size;
-        size_t shared_secret_size;
-    };
 
-    const KyberParams KYBER512_PARAMS = {
-        2, 256, 3329, 3, 2, 10, 4, 800, 1632, 768, 32
-    };
+// HKDF info string binding the derived key to this construction and version.
+constexpr char KDF_INFO[] = "QyberSafe/ML-KEM-DEM/v1";
+constexpr size_t AES_KEY_LEN = 32;   // AES-256
+constexpr size_t GCM_NONCE_LEN = 12; // 96-bit GCM nonce
+constexpr size_t GCM_TAG_LEN = 16;   // 128-bit GCM tag
 
-    const KyberParams KYBER768_PARAMS = {
-        3, 256, 3329, 2, 2, 10, 4, 1184, 2400, 1088, 32
-    };
-
-    const KyberParams KYBER1024_PARAMS = {
-        4, 256, 3329, 2, 2, 11, 5, 1568, 3168, 1568, 32
-    };
-
-    const KyberParams* get_params(SecurityLevel level) {
-        switch (level) {
-            case SecurityLevel::KYBER_512:
-                return &KYBER512_PARAMS;
-            case SecurityLevel::KYBER_768:
-                return &KYBER768_PARAMS;
-            case SecurityLevel::KYBER_1024:
-                return &KYBER1024_PARAMS;
-            // Handle legacy compatibility
-            case SecurityLevel::MEDIUM:
-                return &KYBER768_PARAMS;
-            default:
-                throw std::invalid_argument("Invalid Kyber security level");
-        }
+// Map a QyberSafe security level (including the legacy aliases) to the liboqs
+// ML-KEM algorithm identifier.
+const char* alg_name(SecurityLevel level) {
+    switch (level) {
+        case SecurityLevel::KYBER_512:
+        case SecurityLevel::LOW:
+            return OQS_KEM_alg_ml_kem_512;
+        case SecurityLevel::KYBER_768:
+        case SecurityLevel::MEDIUM:
+            return OQS_KEM_alg_ml_kem_768;
+        case SecurityLevel::KYBER_1024:
+        case SecurityLevel::HIGH:
+            return OQS_KEM_alg_ml_kem_1024;
+        default:
+            throw std::invalid_argument("Unsupported ML-KEM security level");
     }
 }
 
-// PublicKey implementation
-PublicKey::PublicKey(const bytes& data) : data_(data), validity_checked_(false), is_valid_(false) {}
+struct KemDeleter {
+    void operator()(OQS_KEM* kem) const noexcept { OQS_KEM_free(kem); }
+};
+using KemPtr = std::unique_ptr<OQS_KEM, KemDeleter>;
 
-const bytes& PublicKey::data() const {
-    return data_;
+KemPtr make_kem(SecurityLevel level) {
+    KemPtr kem(OQS_KEM_new(alg_name(level)));
+    if (!kem) {
+        throw std::runtime_error(
+            "ML-KEM algorithm not enabled in this liboqs build");
+    }
+    return kem;
 }
 
-size_t PublicKey::size() const {
-    return data_.size();
+SecurityLevel level_from_public_key_size(size_t n) {
+    if (n == core::KYBER_PUBLIC_KEY_512) return SecurityLevel::KYBER_512;
+    if (n == core::KYBER_PUBLIC_KEY_768) return SecurityLevel::KYBER_768;
+    if (n == core::KYBER_PUBLIC_KEY_1024) return SecurityLevel::KYBER_1024;
+    throw std::invalid_argument("Unrecognized ML-KEM public key size");
 }
+
+SecurityLevel level_from_private_key_size(size_t n) {
+    if (n == core::KYBER_PRIVATE_KEY_512) return SecurityLevel::KYBER_512;
+    if (n == core::KYBER_PRIVATE_KEY_768) return SecurityLevel::KYBER_768;
+    if (n == core::KYBER_PRIVATE_KEY_1024) return SecurityLevel::KYBER_1024;
+    throw std::invalid_argument("Unrecognized ML-KEM private key size");
+}
+
+// HKDF-SHA-256 with an empty salt, extracting a fixed-length key.
+bytes hkdf_sha256(const bytes& ikm, size_t out_len) {
+    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ctx(
+        EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr), EVP_PKEY_CTX_free);
+    if (!ctx) throw std::runtime_error("HKDF: context allocation failed");
+
+    if (EVP_PKEY_derive_init(ctx.get()) <= 0 ||
+        EVP_PKEY_CTX_set_hkdf_md(ctx.get(), EVP_sha256()) <= 0 ||
+        EVP_PKEY_CTX_set1_hkdf_key(ctx.get(), ikm.data(),
+                                   static_cast<int>(ikm.size())) <= 0 ||
+        EVP_PKEY_CTX_add1_hkdf_info(
+            ctx.get(), reinterpret_cast<const unsigned char*>(KDF_INFO),
+            static_cast<int>(sizeof(KDF_INFO) - 1)) <= 0) {
+        throw std::runtime_error("HKDF: parameter setup failed");
+    }
+
+    bytes out(out_len);
+    size_t len = out_len;
+    if (EVP_PKEY_derive(ctx.get(), out.data(), &len) <= 0 || len != out_len) {
+        throw std::runtime_error("HKDF: key derivation failed");
+    }
+    return out;
+}
+
+// AES-256-GCM. Appends nothing to inputs; tag is returned separately.
+void aes_256_gcm_encrypt(const bytes& key, const bytes& nonce,
+                         const bytes& plaintext, bytes& ciphertext,
+                         bytes& tag) {
+    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
+        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (!ctx) throw std::runtime_error("AES-GCM: context allocation failed");
+
+    if (EVP_EncryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
+                           nullptr) != 1 ||
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
+                            static_cast<int>(nonce.size()), nullptr) != 1 ||
+        EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
+                           nonce.data()) != 1) {
+        throw std::runtime_error("AES-GCM: encrypt init failed");
+    }
+
+    ciphertext.resize(plaintext.size());
+    int out_len = 0;
+    if (!plaintext.empty() &&
+        EVP_EncryptUpdate(ctx.get(), ciphertext.data(), &out_len,
+                          plaintext.data(),
+                          static_cast<int>(plaintext.size())) != 1) {
+        throw std::runtime_error("AES-GCM: encrypt update failed");
+    }
+    int final_len = 0;
+    if (EVP_EncryptFinal_ex(ctx.get(), ciphertext.data() + out_len,
+                            &final_len) != 1) {
+        throw std::runtime_error("AES-GCM: encrypt final failed");
+    }
+    ciphertext.resize(static_cast<size_t>(out_len + final_len));
+
+    tag.resize(GCM_TAG_LEN);
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG,
+                            static_cast<int>(GCM_TAG_LEN), tag.data()) != 1) {
+        throw std::runtime_error("AES-GCM: get tag failed");
+    }
+}
+
+// Returns false on authentication failure (does not throw on a bad tag).
+bool aes_256_gcm_decrypt(const bytes& key, const bytes& nonce,
+                         const bytes& ciphertext, const bytes& tag,
+                         bytes& plaintext) {
+    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
+        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+    if (!ctx) throw std::runtime_error("AES-GCM: context allocation failed");
+
+    if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
+                           nullptr) != 1 ||
+        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
+                            static_cast<int>(nonce.size()), nullptr) != 1 ||
+        EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
+                           nonce.data()) != 1) {
+        throw std::runtime_error("AES-GCM: decrypt init failed");
+    }
+
+    plaintext.resize(ciphertext.size());
+    int out_len = 0;
+    if (!ciphertext.empty() &&
+        EVP_DecryptUpdate(ctx.get(), plaintext.data(), &out_len,
+                          ciphertext.data(),
+                          static_cast<int>(ciphertext.size())) != 1) {
+        throw std::runtime_error("AES-GCM: decrypt update failed");
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG,
+                            static_cast<int>(tag.size()),
+                            const_cast<unsigned char*>(tag.data())) != 1) {
+        throw std::runtime_error("AES-GCM: set tag failed");
+    }
+
+    int final_len = 0;
+    const int ok = EVP_DecryptFinal_ex(ctx.get(), plaintext.data() + out_len,
+                                       &final_len);
+    if (ok != 1) {
+        core::secure_zero_memory(plaintext.data(), plaintext.size());
+        plaintext.clear();
+        return false;
+    }
+    plaintext.resize(static_cast<size_t>(out_len + final_len));
+    return true;
+}
+
+}  // namespace
+
+// --- PublicKey -------------------------------------------------------------
+
+PublicKey::PublicKey(const bytes& data) : data_(data) {}
+
+const bytes& PublicKey::data() const { return data_; }
+
+size_t PublicKey::size() const { return data_.size(); }
 
 bool PublicKey::is_valid() const {
     if (!validity_checked_) {
-        // Validate based on expected sizes
-        is_valid_ = (data_.size() == KYBER_PUBLIC_KEY_512 ||
-                     data_.size() == KYBER_PUBLIC_KEY_768 ||
-                     data_.size() == KYBER_PUBLIC_KEY_1024);
+        is_valid_ = (data_.size() == core::KYBER_PUBLIC_KEY_512 ||
+                     data_.size() == core::KYBER_PUBLIC_KEY_768 ||
+                     data_.size() == core::KYBER_PUBLIC_KEY_1024);
         validity_checked_ = true;
     }
     return is_valid_;
 }
 
-// PrivateKey implementation
-PrivateKey::PrivateKey(const bytes& data) : data_(data), validity_checked_(false), is_valid_(false) {}
+// --- PrivateKey ------------------------------------------------------------
 
-const bytes& PrivateKey::data() const {
-    return data_;
-}
+PrivateKey::PrivateKey(const bytes& data) : data_(data) {}
 
-size_t PrivateKey::size() const {
-    return data_.size();
-}
+const bytes& PrivateKey::data() const { return data_; }
+
+size_t PrivateKey::size() const { return data_.size(); }
 
 bool PrivateKey::is_valid() const {
     if (!validity_checked_) {
-        // Validate based on expected sizes
-        is_valid_ = (data_.size() == KYBER_PRIVATE_KEY_512 ||
-                     data_.size() == KYBER_PRIVATE_KEY_768 ||
-                     data_.size() == KYBER_PRIVATE_KEY_1024);
+        is_valid_ = (data_.size() == core::KYBER_PRIVATE_KEY_512 ||
+                     data_.size() == core::KYBER_PRIVATE_KEY_768 ||
+                     data_.size() == core::KYBER_PRIVATE_KEY_1024);
         validity_checked_ = true;
     }
     return is_valid_;
 }
 
 PublicKey PrivateKey::get_public_key() const {
-    // In a real implementation, extract the public key from the private key
-    // For now, return the first part of the private key
-    if (data_.size() < 800) {
-        throw std::runtime_error("Private key too small to extract public key");
+    // An ML-KEM decapsulation key embeds the encapsulation key (public key):
+    // dk = (dk_PKE || ek || H(ek) || z), where |dk_PKE| = 384*k = pk_size - 32.
+    const SecurityLevel level = level_from_private_key_size(data_.size());
+    const size_t pk_size = core::key_sizes::kyber_public_key_size(level);
+    const size_t offset = pk_size - 32;
+    if (data_.size() < offset + pk_size) {
+        throw std::runtime_error("Malformed ML-KEM private key");
     }
-
-    size_t pk_size = 800; // Default to Kyber512 size
-    if (data_.size() >= 1632) pk_size = 800;
-    if (data_.size() >= 2400) pk_size = 1184;
-    if (data_.size() >= 3168) pk_size = 1568;
-
-    return PublicKey(bytes(data_.begin(), data_.begin() + pk_size));
+    return PublicKey(bytes(data_.begin() + offset,
+                           data_.begin() + offset + pk_size));
 }
 
-// KeyPair implementation
+// --- KeyPair ---------------------------------------------------------------
+
 KeyPair::KeyPair(PublicKey public_key, PrivateKey private_key)
-    : public_key_(std::move(public_key)), private_key_(std::move(private_key)) {}
+    : public_key_(std::move(public_key)),
+      private_key_(std::move(private_key)) {}
 
-const PublicKey& KeyPair::public_key() const {
-    return public_key_;
-}
+const PublicKey& KeyPair::public_key() const { return public_key_; }
 
-const PrivateKey& KeyPair::private_key() const {
-    return private_key_;
-}
+const PrivateKey& KeyPair::private_key() const { return private_key_; }
 
-// Helper functions
-namespace {
-    // SHAKE-256 hash function
-    bytes shake256(const bytes& input, size_t output_length) {
-        bytes output(output_length);
+// --- KEM -------------------------------------------------------------------
 
-        EVP_MD_CTX* ctx = EVP_MD_CTX_new();
-        if (!ctx) {
-            throw std::runtime_error("Failed to create hash context");
-        }
-
-        if (EVP_DigestInit_ex(ctx, EVP_shake256(), nullptr) != 1) {
-            EVP_MD_CTX_free(ctx);
-            throw std::runtime_error("Failed to initialize hash");
-        }
-
-        if (EVP_DigestUpdate(ctx, input.data(), input.size()) != 1) {
-            EVP_MD_CTX_free(ctx);
-            throw std::runtime_error("Failed to update hash");
-        }
-
-        if (EVP_DigestFinalXOF(ctx, output.data(), output_length) != 1) {
-            EVP_MD_CTX_free(ctx);
-            throw std::runtime_error("Failed to finalize hash");
-        }
-
-        EVP_MD_CTX_free(ctx);
-        return output;
-    }
-
-    // Simple polynomial operations (simplified for demonstration)
-    bytes generate_polynomial(SecurityLevel level) {
-        const KyberParams* params = get_params(level);
-        auto random_result = core::random_bytes(params->n * 2); // 2 bytes per coefficient
-
-        if (!random_result.is_success()) {
-            throw std::runtime_error("Failed to generate random bytes: " + random_result.error());
-        }
-
-        return random_result.value();
-    }
-
-    // Simplified polynomial multiplication
-    bytes polynomial_multiply(const bytes& a, const bytes& b, SecurityLevel level) {
-        const KyberParams* params = get_params(level);
-        bytes result(params->n * 2, 0); // 2 bytes per coefficient
-
-        // This is a very simplified version - real implementation would use NTT
-        for (size_t i = 0; i < std::min(a.size(), b.size()); i += 2) {
-            for (size_t j = 0; j < std::min(a.size(), b.size()); j += 2) {
-                int16_t coeff_a = static_cast<int16_t>(a[i]) | (static_cast<int16_t>(a[i + 1]) << 8);
-                int16_t coeff_b = static_cast<int16_t>(b[j]) | (static_cast<int16_t>(b[j + 1]) << 8);
-
-                // Simplified multiplication modulo q
-                int32_t product = (coeff_a * coeff_b) % params->q;
-
-                if (i + j < result.size() - 1) {
-                    result[i + j] = static_cast<uint8_t>(product & 0xFF);
-                    result[i + j + 1] = static_cast<uint8_t>((product >> 8) & 0xFF);
-                }
-            }
-        }
-
-        return result;
-    }
-}
-
-// Core Kyber functions
 KeyPair generate_keypair(SecurityLevel level) {
-    const KyberParams* params = get_params(level);
+    KemPtr kem = make_kem(level);
 
+    bytes pk(kem->length_public_key);
+    bytes sk(kem->length_secret_key);
+    if (OQS_KEM_keypair(kem.get(), pk.data(), sk.data()) != OQS_SUCCESS) {
+        throw std::runtime_error("ML-KEM key generation failed");
+    }
+    return KeyPair(PublicKey(pk), PrivateKey(sk));
+}
+
+core::Result<std::pair<bytes, bytes>> encapsulate(const PublicKey& public_key) {
+    if (!public_key.is_valid()) {
+        return core::Result<std::pair<bytes, bytes>>::error(
+            "Invalid public key");
+    }
     try {
-        // Generate seed for key generation
-        auto seed_result = core::random_bytes(32);
-        if (!seed_result.is_success()) {
-            throw std::runtime_error("Failed to generate seed: " + seed_result.error());
+        KemPtr kem = make_kem(level_from_public_key_size(public_key.size()));
+        bytes ciphertext(kem->length_ciphertext);
+        bytes shared_secret(kem->length_shared_secret);
+        if (OQS_KEM_encaps(kem.get(), ciphertext.data(), shared_secret.data(),
+                           public_key.data().data()) != OQS_SUCCESS) {
+            return core::Result<std::pair<bytes, bytes>>::error(
+                "ML-KEM encapsulation failed");
         }
-
-        // Generate expanded key material
-        bytes key_material = shake256(seed_result.value(), params->public_key_size + params->private_key_size);
-
-        // Split into public and private key parts
-        bytes pk_data(key_material.begin(), key_material.begin() + params->public_key_size);
-        bytes sk_data(key_material.begin() + params->public_key_size, key_material.end());
-
-        // Add public key to private key for Kyber
-        sk_data.insert(sk_data.end(), pk_data.begin(), pk_data.end());
-
-        PublicKey public_key(pk_data);
-        PrivateKey private_key(sk_data);
-
-        return KeyPair(std::move(public_key), std::move(private_key));
-
+        return core::Result<std::pair<bytes, bytes>>::success(
+            std::make_pair(std::move(ciphertext), std::move(shared_secret)));
     } catch (const std::exception& e) {
-        throw std::runtime_error("Failed to generate Kyber keypair: " + std::string(e.what()));
+        return core::Result<std::pair<bytes, bytes>>::error("encapsulate",
+                                                            e.what());
     }
 }
+
+core::Result<bytes> decapsulate(const PrivateKey& private_key,
+                                const bytes& ciphertext) {
+    if (!private_key.is_valid()) {
+        return core::Result<bytes>::error("Invalid private key");
+    }
+    try {
+        KemPtr kem = make_kem(level_from_private_key_size(private_key.size()));
+        if (ciphertext.size() != kem->length_ciphertext) {
+            return core::Result<bytes>::error("Invalid ciphertext size");
+        }
+        bytes shared_secret(kem->length_shared_secret);
+        // ML-KEM uses implicit rejection: a malformed ciphertext yields a
+        // pseudo-random shared secret rather than an error.
+        if (OQS_KEM_decaps(kem.get(), shared_secret.data(), ciphertext.data(),
+                           private_key.data().data()) != OQS_SUCCESS) {
+            return core::Result<bytes>::error("ML-KEM decapsulation failed");
+        }
+        return core::Result<bytes>::success(std::move(shared_secret));
+    } catch (const std::exception& e) {
+        return core::Result<bytes>::error("decapsulate", e.what());
+    }
+}
+
+// --- KEM-DEM convenience encryption ----------------------------------------
+//
+// Wire layout: kem_ciphertext || nonce(12) || tag(16) || aes_gcm_ciphertext
 
 core::bytes encrypt(const PublicKey& public_key, const core::bytes& plaintext) {
     if (!public_key.is_valid()) {
         throw std::invalid_argument("Invalid public key");
     }
 
-    SecurityLevel level;
-    if (public_key.size() == KYBER_PUBLIC_KEY_512) {
-        level = SecurityLevel::KYBER_512;
-    } else if (public_key.size() == KYBER_PUBLIC_KEY_768) {
-        level = SecurityLevel::KYBER_768;
-    } else if (public_key.size() == KYBER_PUBLIC_KEY_1024) {
-        level = SecurityLevel::KYBER_1024;
-    } else {
-        throw std::invalid_argument("Invalid public key size");
+    auto encaps = encapsulate(public_key);
+    if (!encaps.is_success()) {
+        throw std::runtime_error("encrypt: " + encaps.error());
+    }
+    const bytes& kem_ct = encaps.value().first;
+    bytes key = hkdf_sha256(encaps.value().second, AES_KEY_LEN);
+
+    bytes nonce(GCM_NONCE_LEN);
+    if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) {
+        core::secure_zero_memory(key.data(), key.size());
+        throw std::runtime_error("encrypt: CSPRNG failure");
     }
 
-    const KyberParams* params = get_params(level);
-
+    bytes ct;
+    bytes tag;
     try {
-        // Generate random nonce and message
-        auto random_result = core::random_bytes(32);
-        if (!random_result.is_success()) {
-            throw std::runtime_error("Failed to generate random bytes: " + random_result.error());
-        }
-
-        bytes nonce = random_result.value();
-
-        // Generate temporary key pair for encapsulation
-        KeyPair temp_keypair = generate_keypair(level);
-
-        // Compute shared secret (simplified)
-        bytes shared_secret = shake256(temp_keypair.private_key().data(), 32);
-
-        // Encrypt the message (simplified)
-        bytes ciphertext = shake256(nonce, params->ciphertext_size);
-
-        // XOR plaintext with part of ciphertext
-        for (size_t i = 0; i < std::min(plaintext.size(), ciphertext.size()); ++i) {
-            ciphertext[i] ^= plaintext[i];
-        }
-
-        return ciphertext;
-
-    } catch (const std::exception& e) {
-        throw std::runtime_error("Failed to encrypt with Kyber: " + std::string(e.what()));
+        aes_256_gcm_encrypt(key, nonce, plaintext, ct, tag);
+    } catch (...) {
+        core::secure_zero_memory(key.data(), key.size());
+        throw;
     }
+    core::secure_zero_memory(key.data(), key.size());
+
+    bytes out;
+    out.reserve(kem_ct.size() + nonce.size() + tag.size() + ct.size());
+    out.insert(out.end(), kem_ct.begin(), kem_ct.end());
+    out.insert(out.end(), nonce.begin(), nonce.end());
+    out.insert(out.end(), tag.begin(), tag.end());
+    out.insert(out.end(), ct.begin(), ct.end());
+    return out;
 }
 
-core::Result<bytes> decrypt(const PrivateKey& private_key, const bytes& ciphertext) {
+core::Result<bytes> decrypt(const PrivateKey& private_key,
+                            const bytes& ciphertext) {
     if (!private_key.is_valid()) {
         return core::Result<bytes>::error("Invalid private key");
     }
-
-    SecurityLevel level;
-    if (private_key.size() == KYBER_PRIVATE_KEY_512) {
-        level = SecurityLevel::KYBER_512;
-    } else if (private_key.size() == KYBER_PRIVATE_KEY_768) {
-        level = SecurityLevel::KYBER_768;
-    } else if (private_key.size() == KYBER_PRIVATE_KEY_1024) {
-        level = SecurityLevel::KYBER_1024;
-    } else {
-        return core::Result<bytes>::error("Invalid private key size");
-    }
-
     try {
-        // Extract shared secret from private key (simplified)
-        bytes shared_secret = shake256(private_key.data(), 32);
-
-        // Decrypt by XORing with shared secret-derived key
-        bytes plaintext(ciphertext.size(), 0);
-        bytes decryption_key = shake256(shared_secret, ciphertext.size());
-
-        for (size_t i = 0; i < ciphertext.size(); ++i) {
-            plaintext[i] = ciphertext[i] ^ decryption_key[i];
+        KemPtr kem = make_kem(level_from_private_key_size(private_key.size()));
+        const size_t kem_ct_len = kem->length_ciphertext;
+        const size_t header = kem_ct_len + GCM_NONCE_LEN + GCM_TAG_LEN;
+        if (ciphertext.size() < header) {
+            return core::Result<bytes>::error("Ciphertext too short");
         }
 
+        auto it = ciphertext.begin();
+        bytes kem_ct(it, it + kem_ct_len);
+        it += kem_ct_len;
+        bytes nonce(it, it + GCM_NONCE_LEN);
+        it += GCM_NONCE_LEN;
+        bytes tag(it, it + GCM_TAG_LEN);
+        it += GCM_TAG_LEN;
+        bytes aes_ct(it, ciphertext.end());
+
+        auto decaps = decapsulate(private_key, kem_ct);
+        if (!decaps.is_success()) {
+            return core::Result<bytes>::error(decaps.error());
+        }
+        bytes key = hkdf_sha256(decaps.value(), AES_KEY_LEN);
+
+        bytes plaintext;
+        const bool ok = aes_256_gcm_decrypt(key, nonce, aes_ct, tag, plaintext);
+        core::secure_zero_memory(key.data(), key.size());
+        if (!ok) {
+            return core::Result<bytes>::error("Authentication failed");
+        }
         return core::Result<bytes>::success(std::move(plaintext));
-
     } catch (const std::exception& e) {
-        return core::Result<bytes>::error("Failed to decrypt with Kyber: " + std::string(e.what()));
+        return core::Result<bytes>::error("decrypt", e.what());
     }
 }
 
-core::Result<std::pair<bytes, bytes>> encapsulate(const PublicKey& public_key) {
-    if (!public_key.is_valid()) {
-        return core::Result<std::pair<bytes, bytes>>::error("Invalid public key");
-    }
+// --- Sizes -----------------------------------------------------------------
 
-    try {
-        // Generate random shared secret
-        auto secret_result = core::random_bytes(32);
-        if (!secret_result.is_success()) {
-            return core::Result<std::pair<bytes, bytes>>::error("Failed to generate shared secret: " + secret_result.error());
-        }
-
-        bytes shared_secret = secret_result.value();
-
-        // Encrypt the shared secret
-        bytes ciphertext = encrypt(public_key, shared_secret);
-
-        return core::Result<std::pair<bytes, bytes>>::success(std::make_pair(std::move(ciphertext), std::move(shared_secret)));
-
-    } catch (const std::exception& e) {
-        return core::Result<std::pair<bytes, bytes>>::error("Failed to encapsulate with Kyber: " + std::string(e.what()));
-    }
-}
-
-core::Result<bytes> decapsulate(const PrivateKey& private_key, const bytes& ciphertext) {
-    auto decrypt_result = decrypt(private_key, ciphertext);
-    if (!decrypt_result.is_success()) {
-        return decrypt_result;
-    }
-
-    return core::Result<bytes>::success(decrypt_result.value());
-}
-
-// Utility functions
 size_t get_public_key_size(SecurityLevel level) {
-    const KyberParams* params = get_params(level);
-    return params->public_key_size;
+    return core::key_sizes::kyber_public_key_size(level);
 }
 
 size_t get_private_key_size(SecurityLevel level) {
-    const KyberParams* params = get_params(level);
-    return params->private_key_size;
+    return core::key_sizes::kyber_private_key_size(level);
 }
 
 size_t get_ciphertext_size(SecurityLevel level) {
-    const KyberParams* params = get_params(level);
-    return params->ciphertext_size;
+    return core::key_sizes::kyber_ciphertext_size(level);
 }
 
-size_t get_shared_secret_size() {
-    return 32; // 256-bit shared secret
-}
+size_t get_shared_secret_size() { return 32; }
 
-} // namespace qybersafe::kyber
+}  // namespace qybersafe::kyber

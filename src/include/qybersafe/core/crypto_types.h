@@ -390,19 +390,20 @@ private:
 template<>
 class Result<void> {
 public:
-    [[nodiscard]] static constexpr Result success() noexcept {
+    // Not constexpr: Result<void> holds a std::string and is not a literal type.
+    [[nodiscard]] static Result success() noexcept {
         return Result(true);
     }
 
-    [[nodiscard]] static constexpr Result error(const std::string& error_msg) noexcept {
+    [[nodiscard]] static Result error(const std::string& error_msg) noexcept {
         return Result(false, error_msg);
     }
 
-    [[nodiscard]] static constexpr Result error(ErrorCode ec) noexcept {
+    [[nodiscard]] static Result error(ErrorCode ec) noexcept {
         return Result(false, make_error_code(ec).message());
     }
 
-    [[nodiscard]] static constexpr Result error(const std::string& context, const std::string& error_msg) noexcept {
+    [[nodiscard]] static Result error(const std::string& context, const std::string& error_msg) noexcept {
         return Result(false, context + ": " + error_msg);
     }
 
