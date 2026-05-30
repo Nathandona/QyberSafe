@@ -67,6 +67,10 @@ if(QYBERSAFE_BUILD_PYTHON)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
+# Installing the C++ library/headers/package files. Turned off when building a
+# Python wheel, which should contain only the extension module.
+option(QYBERSAFE_INSTALL_CXX "Install the C++ library, headers, and package files" ON)
+
 # Fetch and build liboqs (provides the post-quantum primitives)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(liboqs)
@@ -153,58 +157,60 @@ if(DOXYGEN_FOUND)
     endif()
 endif()
 
-# Install the library
-install(TARGETS qybersafe
-    EXPORT QyberSafeTargets
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-# Install the headers
-install(DIRECTORY src/include/qybersafe
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-        FILES_MATCHING PATTERN "*.h"
-)
-
-# Export configuration
-install(EXPORT QyberSafeTargets
-    FILE QyberSafeTargets.cmake
-    NAMESPACE qybersafe::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QyberSafe
-)
-
-# Create and install config files (only if template exists)
-include(CMakePackageConfigHelpers)
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QyberSafeConfig.cmake.in")
-    configure_package_config_file(
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QyberSafeConfig.cmake.in"
-        "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfig.cmake"
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QyberSafe
+if(QYBERSAFE_INSTALL_CXX)
+    # Install the library
+    install(TARGETS qybersafe
+        EXPORT QyberSafeTargets
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
 
-    write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfigVersion.cmake"
-        VERSION ${PROJECT_VERSION}
-        COMPATIBILITY SameMajorVersion
+    # Install the headers
+    install(DIRECTORY src/include/qybersafe
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+            FILES_MATCHING PATTERN "*.h"
     )
 
-    install(FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfig.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfigVersion.cmake"
+    # Export configuration
+    install(EXPORT QyberSafeTargets
+        FILE QyberSafeTargets.cmake
+        NAMESPACE qybersafe::
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QyberSafe
     )
-endif()
 
-# Create pkg-config file
-configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/qybersafe.pc.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/qybersafe.pc"
-    @ONLY
-)
-install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qybersafe.pc"
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+    # Create and install config files (only if template exists)
+    include(CMakePackageConfigHelpers)
+
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QyberSafeConfig.cmake.in")
+        configure_package_config_file(
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/QyberSafeConfig.cmake.in"
+            "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfig.cmake"
+            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QyberSafe
+        )
+
+        write_basic_package_version_file(
+            "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfigVersion.cmake"
+            VERSION ${PROJECT_VERSION}
+            COMPATIBILITY SameMajorVersion
+        )
+
+        install(FILES
+            "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfig.cmake"
+            "${CMAKE_CURRENT_BINARY_DIR}/QyberSafeConfigVersion.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/QyberSafe
+        )
+    endif()
+
+    # Create pkg-config file
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/qybersafe.pc.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/qybersafe.pc"
+        @ONLY
+    )
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/qybersafe.pc"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+endif()
 
 # Print configuration summary
 message(STATUS "")
