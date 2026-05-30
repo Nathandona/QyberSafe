@@ -1,0 +1,27 @@
+name: Wheels
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  linux:
+    name: wheels (manylinux x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v2.21
+        env:
+          # Phase 1: a couple of CPython versions on manylinux to validate the
+          # pipeline. Widened to the full range and to macOS/Windows next.
+          CIBW_BUILD: "cp311-manylinux_x86_64 cp312-manylinux_x86_64"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux
+          path: wheelhouse/*.whl
