@@ -65,10 +65,15 @@ private:
     std::shared_ptr<HybridKeyPairImpl> impl_;
 };
 
-// Core hybrid encryption functions
+// Core hybrid encryption functions. The optional associated data (aad) is
+// authenticated but not stored; the same aad must be supplied to decrypt.
 HybridKeyPair generate_hybrid_keypair();
-core::bytes hybrid_encrypt(const HybridPublicKey& public_key, const core::bytes& plaintext);
-core::bytes hybrid_decrypt(const HybridPrivateKey& private_key, const core::bytes& ciphertext);
+core::bytes hybrid_encrypt(const HybridPublicKey& public_key,
+                           const core::bytes& plaintext,
+                           const core::bytes& aad = {});
+core::bytes hybrid_decrypt(const HybridPrivateKey& private_key,
+                           const core::bytes& ciphertext,
+                           const core::bytes& aad = {});
 
 } // namespace qybersafe::hybrid
 

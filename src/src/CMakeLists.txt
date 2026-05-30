@@ -7,10 +7,12 @@ add_library(qybersafe STATIC
     core/crypto_types.cpp
     core/secure_random.cpp
     core/memory.cpp
+    core/aead.cpp
     kyber/kyber_kem.cpp
     dilithium/dilithium_sig.cpp
     sphincsplus/sphincsplus_sig.cpp
     hybrid/hybrid_encryption.cpp
+    api/qybersafe_api.cpp
     # utils/hex.cpp                       # re-add when needed
     # utils/base64.cpp                    # re-add when needed
 )

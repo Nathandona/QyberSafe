@@ -128,8 +128,8 @@ Algorithm id registry (uint16):
 |--------|----------------------------------|
 | 0x0002 | ML-KEM-768                       |
 | 0x0001 / 0x0003 | ML-KEM-512 / ML-KEM-1024 |
-| 0x0102 | ML-DSA-65                        |
-| 0x0201 | SLH-DSA-SHA2-192s                |
+| 0x0101 / 0x0102 / 0x0103 | ML-DSA-44 / ML-DSA-65 / ML-DSA-87 |
+| 0x0201 / 0x0202 / 0x0203 | SLH-DSA-SHA2-128s / 192s / 256s |
 | 0x0301 | Hybrid suite: X25519 + ML-KEM-768 + AES-256-GCM |
 
 Body is a sequence of length-prefixed fields (`uint32 length` then bytes; a

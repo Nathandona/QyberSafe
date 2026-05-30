@@ -1,14 +1,13 @@
 #include "qybersafe/kyber/kyber_kem.h"
 
 #include <oqs/oqs.h>
-#include <openssl/evp.h>
-#include <openssl/kdf.h>
-#include <openssl/rand.h>
 
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
+
+#include "qybersafe/core/aead.h"
 
 /**
  * @file kyber_kem.cpp
@@ -33,9 +32,8 @@ namespace {
 
 // HKDF info string binding the derived key to this construction and version.
 constexpr char KDF_INFO[] = "QyberSafe/ML-KEM-DEM/v1";
-constexpr size_t AES_KEY_LEN = 32;   // AES-256
-constexpr size_t GCM_NONCE_LEN = 12; // 96-bit GCM nonce
-constexpr size_t GCM_TAG_LEN = 16;   // 128-bit GCM tag
+
+bytes kdf_info() { return bytes(KDF_INFO, KDF_INFO + sizeof(KDF_INFO) - 1); }
 
 // Map a QyberSafe security level (including the legacy aliases) to the liboqs
 // ML-KEM algorithm identifier.
@@ -81,113 +79,6 @@ SecurityLevel level_from_private_key_size(size_t n) {
     if (n == core::KYBER_PRIVATE_KEY_768) return SecurityLevel::KYBER_768;
     if (n == core::KYBER_PRIVATE_KEY_1024) return SecurityLevel::KYBER_1024;
     throw std::invalid_argument("Unrecognized ML-KEM private key size");
-}
-
-// HKDF-SHA-256 with an empty salt, extracting a fixed-length key.
-bytes hkdf_sha256(const bytes& ikm, size_t out_len) {
-    std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> ctx(
-        EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr), EVP_PKEY_CTX_free);
-    if (!ctx) throw std::runtime_error("HKDF: context allocation failed");
-
-    if (EVP_PKEY_derive_init(ctx.get()) <= 0 ||
-        EVP_PKEY_CTX_set_hkdf_md(ctx.get(), EVP_sha256()) <= 0 ||
-        EVP_PKEY_CTX_set1_hkdf_key(ctx.get(), ikm.data(),
-                                   static_cast<int>(ikm.size())) <= 0 ||
-        EVP_PKEY_CTX_add1_hkdf_info(
-            ctx.get(), reinterpret_cast<const unsigned char*>(KDF_INFO),
-            static_cast<int>(sizeof(KDF_INFO) - 1)) <= 0) {
-        throw std::runtime_error("HKDF: parameter setup failed");
-    }
-
-    bytes out(out_len);
-    size_t len = out_len;
-    if (EVP_PKEY_derive(ctx.get(), out.data(), &len) <= 0 || len != out_len) {
-        throw std::runtime_error("HKDF: key derivation failed");
-    }
-    return out;
-}
-
-// AES-256-GCM. Appends nothing to inputs; tag is returned separately.
-void aes_256_gcm_encrypt(const bytes& key, const bytes& nonce,
-                         const bytes& plaintext, bytes& ciphertext,
-                         bytes& tag) {
-    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
-        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-    if (!ctx) throw std::runtime_error("AES-GCM: context allocation failed");
-
-    if (EVP_EncryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
-                           nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
-                            static_cast<int>(nonce.size()), nullptr) != 1 ||
-        EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
-                           nonce.data()) != 1) {
-        throw std::runtime_error("AES-GCM: encrypt init failed");
-    }
-
-    ciphertext.resize(plaintext.size());
-    int out_len = 0;
-    if (!plaintext.empty() &&
-        EVP_EncryptUpdate(ctx.get(), ciphertext.data(), &out_len,
-                          plaintext.data(),
-                          static_cast<int>(plaintext.size())) != 1) {
-        throw std::runtime_error("AES-GCM: encrypt update failed");
-    }
-    int final_len = 0;
-    if (EVP_EncryptFinal_ex(ctx.get(), ciphertext.data() + out_len,
-                            &final_len) != 1) {
-        throw std::runtime_error("AES-GCM: encrypt final failed");
-    }
-    ciphertext.resize(static_cast<size_t>(out_len + final_len));
-
-    tag.resize(GCM_TAG_LEN);
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG,
-                            static_cast<int>(GCM_TAG_LEN), tag.data()) != 1) {
-        throw std::runtime_error("AES-GCM: get tag failed");
-    }
-}
-
-// Returns false on authentication failure (does not throw on a bad tag).
-bool aes_256_gcm_decrypt(const bytes& key, const bytes& nonce,
-                         const bytes& ciphertext, const bytes& tag,
-                         bytes& plaintext) {
-    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
-        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-    if (!ctx) throw std::runtime_error("AES-GCM: context allocation failed");
-
-    if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
-                           nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
-                            static_cast<int>(nonce.size()), nullptr) != 1 ||
-        EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
-                           nonce.data()) != 1) {
-        throw std::runtime_error("AES-GCM: decrypt init failed");
-    }
-
-    plaintext.resize(ciphertext.size());
-    int out_len = 0;
-    if (!ciphertext.empty() &&
-        EVP_DecryptUpdate(ctx.get(), plaintext.data(), &out_len,
-                          ciphertext.data(),
-                          static_cast<int>(ciphertext.size())) != 1) {
-        throw std::runtime_error("AES-GCM: decrypt update failed");
-    }
-
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG,
-                            static_cast<int>(tag.size()),
-                            const_cast<unsigned char*>(tag.data())) != 1) {
-        throw std::runtime_error("AES-GCM: set tag failed");
-    }
-
-    int final_len = 0;
-    const int ok = EVP_DecryptFinal_ex(ctx.get(), plaintext.data() + out_len,
-                                       &final_len);
-    if (ok != 1) {
-        core::secure_zero_memory(plaintext.data(), plaintext.size());
-        plaintext.clear();
-        return false;
-    }
-    plaintext.resize(static_cast<size_t>(out_len + final_len));
-    return true;
 }
 
 }  // namespace
@@ -323,18 +214,14 @@ core::bytes encrypt(const PublicKey& public_key, const core::bytes& plaintext) {
         throw std::runtime_error("encrypt: " + encaps.error());
     }
     const bytes& kem_ct = encaps.value().first;
-    bytes key = hkdf_sha256(encaps.value().second, AES_KEY_LEN);
-
-    bytes nonce(GCM_NONCE_LEN);
-    if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) {
-        core::secure_zero_memory(key.data(), key.size());
-        throw std::runtime_error("encrypt: CSPRNG failure");
-    }
+    bytes key = core::hkdf_sha256(encaps.value().second, kdf_info(),
+                                  core::AES_256_KEY_LEN);
+    const bytes nonce = core::csprng_bytes(core::GCM_NONCE_LEN);
 
     bytes ct;
     bytes tag;
     try {
-        aes_256_gcm_encrypt(key, nonce, plaintext, ct, tag);
+        core::aes256gcm_encrypt(key, nonce, /*aad=*/{}, plaintext, ct, tag);
     } catch (...) {
         core::secure_zero_memory(key.data(), key.size());
         throw;
@@ -358,7 +245,7 @@ core::Result<bytes> decrypt(const PrivateKey& private_key,
     try {
         KemPtr kem = make_kem(level_from_private_key_size(private_key.size()));
         const size_t kem_ct_len = kem->length_ciphertext;
-        const size_t header = kem_ct_len + GCM_NONCE_LEN + GCM_TAG_LEN;
+        const size_t header = kem_ct_len + core::GCM_NONCE_LEN + core::GCM_TAG_LEN;
         if (ciphertext.size() < header) {
             return core::Result<bytes>::error("Ciphertext too short");
         }
@@ -366,20 +253,23 @@ core::Result<bytes> decrypt(const PrivateKey& private_key,
         auto it = ciphertext.begin();
         bytes kem_ct(it, it + kem_ct_len);
         it += kem_ct_len;
-        bytes nonce(it, it + GCM_NONCE_LEN);
-        it += GCM_NONCE_LEN;
-        bytes tag(it, it + GCM_TAG_LEN);
-        it += GCM_TAG_LEN;
+        bytes nonce(it, it + core::GCM_NONCE_LEN);
+        it += core::GCM_NONCE_LEN;
+        bytes tag(it, it + core::GCM_TAG_LEN);
+        it += core::GCM_TAG_LEN;
         bytes aes_ct(it, ciphertext.end());
 
         auto decaps = decapsulate(private_key, kem_ct);
         if (!decaps.is_success()) {
             return core::Result<bytes>::error(decaps.error());
         }
-        bytes key = hkdf_sha256(decaps.value(), AES_KEY_LEN);
+        bytes key = core::hkdf_sha256(decaps.value(), kdf_info(),
+                                      core::AES_256_KEY_LEN);
 
         bytes plaintext;
-        const bool ok = aes_256_gcm_decrypt(key, nonce, aes_ct, tag, plaintext);
+        const bool ok =
+            core::aes256gcm_decrypt(key, nonce, /*aad=*/{}, aes_ct, tag,
+                                    plaintext);
         core::secure_zero_memory(key.data(), key.size());
         if (!ok) {
             return core::Result<bytes>::error("Authentication failed");

@@ -16,11 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rewritten test suites for both.
 - Hybrid public-key encryption (suite 0x0301: X25519 + ML-KEM-768 + AES-256-GCM)
   with an HKDF-SHA-256 combiner and a self-describing, versioned wire format.
+- Envelope-first public API (`qybersafe.h`): `seal`/`open` and `sign`/`verify`
+  with opaque keys, self-describing serialization, and a `CryptoError` exception
+  model. The lower-level per-algorithm modules remain available.
+- Associated-data (AAD) support for hybrid encryption / `seal`.
 - LICENSE file (MIT).
 
 ### Changed
-- Kyber encrypt/decrypt are now an authenticated KEM-DEM (ML-KEM encapsulation,
-  HKDF-SHA-256 key derivation, AES-256-GCM) instead of the previous placeholder.
+- Kyber and hybrid encrypt/decrypt are now an authenticated KEM-DEM (ML-KEM
+  encapsulation, HKDF-SHA-256 key derivation, AES-256-GCM) instead of placeholders.
+- Factored the shared symmetric layer (HKDF-SHA-256, CSPRNG, AES-256-GCM) into
+  `core/aead` and routed the KEM-DEM and hybrid constructions through it.
 - Strict compiler warnings are scoped to QyberSafe's own targets, not vendored code.
 
 ### Removed

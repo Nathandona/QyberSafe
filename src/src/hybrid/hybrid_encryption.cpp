@@ -1,14 +1,13 @@
 #include "qybersafe/hybrid/hybrid_encryption.h"
 
 #include <openssl/evp.h>
-#include <openssl/kdf.h>
-#include <openssl/rand.h>
 
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 #include <utility>
 
+#include "qybersafe/core/aead.h"
 #include "qybersafe/kyber/kyber_kem.h"
 
 /**
@@ -40,9 +39,6 @@ constexpr uint8_t kTypeEnvelope = 5;
 constexpr uint16_t kAlgHybrid = 0x0301;  // X25519 + ML-KEM-768 + AES-256-GCM
 
 constexpr size_t kX25519Len = 32;
-constexpr size_t kAesKeyLen = 32;
-constexpr size_t kNonceLen = 12;
-constexpr size_t kTagLen = 16;
 
 constexpr kyber::SecurityLevel kPqLevel = kyber::SecurityLevel::KYBER_768;
 
@@ -169,97 +165,6 @@ bytes x25519_ecdh(const bytes& priv, const bytes& peer_pub) {
     }
     secret.resize(len);
     return secret;
-}
-
-bytes hkdf_sha256(const bytes& ikm, const bytes& info, size_t out_len) {
-    PkeyCtxPtr ctx(EVP_PKEY_CTX_new_id(EVP_PKEY_HKDF, nullptr),
-                   EVP_PKEY_CTX_free);
-    if (!ctx || EVP_PKEY_derive_init(ctx.get()) <= 0 ||
-        EVP_PKEY_CTX_set_hkdf_md(ctx.get(), EVP_sha256()) <= 0 ||
-        EVP_PKEY_CTX_set1_hkdf_key(ctx.get(), ikm.data(),
-                                   static_cast<int>(ikm.size())) <= 0 ||
-        EVP_PKEY_CTX_add1_hkdf_info(ctx.get(), info.data(),
-                                    static_cast<int>(info.size())) <= 0) {
-        throw std::runtime_error("HKDF setup failed");
-    }
-    bytes out(out_len);
-    size_t len = out_len;
-    if (EVP_PKEY_derive(ctx.get(), out.data(), &len) <= 0 || len != out_len) {
-        throw std::runtime_error("HKDF derivation failed");
-    }
-    return out;
-}
-
-void aes_256_gcm_encrypt(const bytes& key, const bytes& nonce,
-                         const bytes& plaintext, bytes& ciphertext,
-                         bytes& tag) {
-    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
-        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-    if (!ctx ||
-        EVP_EncryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
-                           nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
-                            static_cast<int>(nonce.size()), nullptr) != 1 ||
-        EVP_EncryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
-                           nonce.data()) != 1) {
-        throw std::runtime_error("AES-GCM encrypt init failed");
-    }
-    ciphertext.resize(plaintext.size());
-    int out_len = 0;
-    if (!plaintext.empty() &&
-        EVP_EncryptUpdate(ctx.get(), ciphertext.data(), &out_len,
-                          plaintext.data(),
-                          static_cast<int>(plaintext.size())) != 1) {
-        throw std::runtime_error("AES-GCM encrypt failed");
-    }
-    int final_len = 0;
-    if (EVP_EncryptFinal_ex(ctx.get(), ciphertext.data() + out_len,
-                            &final_len) != 1) {
-        throw std::runtime_error("AES-GCM encrypt final failed");
-    }
-    ciphertext.resize(static_cast<size_t>(out_len + final_len));
-    tag.resize(kTagLen);
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_GET_TAG,
-                            static_cast<int>(kTagLen), tag.data()) != 1) {
-        throw std::runtime_error("AES-GCM tag extraction failed");
-    }
-}
-
-bool aes_256_gcm_decrypt(const bytes& key, const bytes& nonce,
-                         const bytes& ciphertext, const bytes& tag,
-                         bytes& plaintext) {
-    std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)> ctx(
-        EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
-    if (!ctx ||
-        EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_gcm(), nullptr, nullptr,
-                           nullptr) != 1 ||
-        EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_IVLEN,
-                            static_cast<int>(nonce.size()), nullptr) != 1 ||
-        EVP_DecryptInit_ex(ctx.get(), nullptr, nullptr, key.data(),
-                           nonce.data()) != 1) {
-        throw std::runtime_error("AES-GCM decrypt init failed");
-    }
-    plaintext.resize(ciphertext.size());
-    int out_len = 0;
-    if (!ciphertext.empty() &&
-        EVP_DecryptUpdate(ctx.get(), plaintext.data(), &out_len,
-                          ciphertext.data(),
-                          static_cast<int>(ciphertext.size())) != 1) {
-        throw std::runtime_error("AES-GCM decrypt failed");
-    }
-    if (EVP_CIPHER_CTX_ctrl(ctx.get(), EVP_CTRL_GCM_SET_TAG,
-                            static_cast<int>(tag.size()),
-                            const_cast<unsigned char*>(tag.data())) != 1) {
-        throw std::runtime_error("AES-GCM set tag failed");
-    }
-    int final_len = 0;
-    if (EVP_DecryptFinal_ex(ctx.get(), plaintext.data() + out_len,
-                            &final_len) != 1) {
-        plaintext.clear();
-        return false;
-    }
-    plaintext.resize(static_cast<size_t>(out_len + final_len));
-    return true;
 }
 
 // Transcript bound into the KDF: suite id, ephemeral key, KEM ciphertext, and
@@ -412,7 +317,8 @@ HybridKeyPair generate_hybrid_keypair() {
 }
 
 core::bytes hybrid_encrypt(const HybridPublicKey& public_key,
-                           const core::bytes& plaintext) {
+                           const core::bytes& plaintext,
+                           const core::bytes& aad) {
     if (!public_key.is_valid()) {
         throw std::invalid_argument("Invalid hybrid public key");
     }
@@ -438,18 +344,14 @@ core::bytes hybrid_encrypt(const HybridPublicKey& public_key,
     ikm.insert(ikm.end(), ss_x.begin(), ss_x.end());
     const bytes info = transcript(eph_pub, kem_ct, public_key.classical_key(),
                                   public_key.pq_key().data());
-    bytes key = hkdf_sha256(ikm, info, kAesKeyLen);
+    bytes key = core::hkdf_sha256(ikm, info, core::AES_256_KEY_LEN);
 
-    bytes nonce(kNonceLen);
-    if (RAND_bytes(nonce.data(), static_cast<int>(nonce.size())) != 1) {
-        core::secure_zero_memory(key.data(), key.size());
-        throw std::runtime_error("hybrid_encrypt: CSPRNG failure");
-    }
+    const bytes nonce = core::csprng_bytes(core::GCM_NONCE_LEN);
 
     bytes ciphertext;
     bytes tag;
     try {
-        aes_256_gcm_encrypt(key, nonce, plaintext, ciphertext, tag);
+        core::aes256gcm_encrypt(key, nonce, aad, plaintext, ciphertext, tag);
     } catch (...) {
         core::secure_zero_memory(key.data(), key.size());
         throw;
@@ -467,7 +369,8 @@ core::bytes hybrid_encrypt(const HybridPublicKey& public_key,
 }
 
 core::bytes hybrid_decrypt(const HybridPrivateKey& private_key,
-                           const core::bytes& ciphertext) {
+                           const core::bytes& ciphertext,
+                           const core::bytes& aad) {
     if (!private_key.is_valid()) {
         throw std::invalid_argument("Invalid hybrid private key");
     }
@@ -498,10 +401,10 @@ core::bytes hybrid_decrypt(const HybridPrivateKey& private_key,
     const bytes recipient_mlkem_pub = private_key.pq_key().get_public_key().data();
     const bytes info =
         transcript(eph_pub, kem_ct, recipient_x25519_pub, recipient_mlkem_pub);
-    bytes key = hkdf_sha256(ikm, info, kAesKeyLen);
+    bytes key = core::hkdf_sha256(ikm, info, core::AES_256_KEY_LEN);
 
     bytes plaintext;
-    const bool ok = aes_256_gcm_decrypt(key, nonce, ct, tag, plaintext);
+    const bool ok = core::aes256gcm_decrypt(key, nonce, aad, ct, tag, plaintext);
     core::secure_zero_memory(key.data(), key.size());
     if (!ok) {
         throw std::runtime_error("hybrid_decrypt: authentication failed");
