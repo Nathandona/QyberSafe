@@ -58,6 +58,14 @@ if(QYBERSAFE_BUILD_PYTHON)
         OUTPUT_NAME _core
         LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python/qybersafe
     )
+    # Statically link libstdc++/libgcc into the module on GCC/Linux so the wheel
+    # carries no external libstdc++ (GLIBCXX) dependency. The manylinux images
+    # ship a newer GCC than their libstdc++ ABI baseline, so without this
+    # auditwheel rejects the wheel for too-recent GLIBCXX symbols.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_options(qybersafe_python PRIVATE
+            -static-libstdc++ -static-libgcc)
+    endif()
 endif()
 
 # Installation
