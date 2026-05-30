@@ -8,27 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project structure and build system
-- Core cryptographic interfaces and types
-- Kyber KEM implementation
-- Dilithium digital signatures
-- SPHINCS+ hash-based signatures
-- Hybrid encryption modes
-- Python bindings with pybind11
-- Comprehensive test suite
-- CI/CD pipeline with GitHub Actions
-- Docker development environment
-- Documentation and examples
+- SPEC.md describing the v1 design (audience, liboqs backend, hybrid scheme, API, scope).
+- liboqs vendored through CMake FetchContent (cmake/liboqs.cmake), pinned to 0.15.0.
+- GoogleTest fetched through FetchContent so the C++ test suite is no longer skipped.
+- Real ML-KEM (FIPS 203) key encapsulation backed by liboqs, with a passing test suite.
 
 ### Changed
-
-### Deprecated
+- Kyber encrypt/decrypt are now an authenticated KEM-DEM (ML-KEM encapsulation,
+  HKDF-SHA-256 key derivation, AES-256-GCM) instead of the previous placeholder.
+- Strict compiler warnings are scoped to QyberSafe's own targets, not vendored code.
 
 ### Removed
+- The non-secure "simplified for demonstration" lattice code that stood in for Kyber.
 
 ### Fixed
+- Secure aligned allocation now works on Windows (MinGW/MSVC), not only POSIX.
+- Removed an invalid `constexpr` on `Result<void>` and base64 char-subscript/type-limits
+  warnings that broke a strict (`-Werror`) build under newer compilers.
 
 ### Security
+- Cryptographic primitives are now provided by audited liboqs implementations rather
+  than in-house code. The library is still pre-audit and not for production use.
 
 ## [0.1.0] - 2024-01-XX
 

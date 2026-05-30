@@ -18,17 +18,19 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Compiler-specific options
+# Strict warnings apply only to QyberSafe's own targets, never to vendored
+# dependencies (liboqs, GoogleTest). Link this interface library into our
+# targets to opt in. Applying these globally would break third-party C code
+# (for example -Wextra-semi is rejected for C sources under -Werror).
+add_library(qybersafe_warnings INTERFACE)
 if(MSVC)
-    add_compile_options(/W4 /WX)
+    target_compile_options(qybersafe_warnings INTERFACE /W4 /WX)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
-    add_compile_options(-Wall -Wextra -Wpedantic -Werror)
-    # Additional security warnings
-    add_compile_options(-Wformat=2 -Wformat-security -Wnull-dereference)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        add_compile_options(-Wextra-semi)
-    endif()
+    target_compile_options(qybersafe_warnings INTERFACE
+        -Wall -Wextra -Wpedantic -Werror
+        -Wformat=2 -Wformat-security -Wnull-dereference
+        $<$<COMPILE_LANGUAGE:CXX>:-Wextra-semi>)
 endif()
 
 # Build type configuration
@@ -54,6 +56,10 @@ endif()
 
 # Find dependencies
 find_package(OpenSSL REQUIRED)
+
+# Fetch and build liboqs (provides the post-quantum primitives)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(liboqs)
 
 # Include directories - using target_include_directories for better scope
 include_directories(src/include)

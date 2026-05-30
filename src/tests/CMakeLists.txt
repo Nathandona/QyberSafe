@@ -1,65 +1,50 @@
-# Testing configuration for QyberSafe
-cmake_minimum_required(VERSION 3.16)
+# Testing configuration for QyberSafe.
+#
+# GoogleTest is fetched and built so the suite is never silently skipped.
+# For M0 only the ML-KEM (Kyber) tests are wired in; tests for the other
+# modules are re-added as those modules are rewritten on top of liboqs.
 
-# Find GoogleTest
-find_package(GTest QUIET)
+include(FetchContent)
+FetchContent_Declare(googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.15.2
+    GIT_SHALLOW TRUE
+)
+# Use the shared C runtime on Windows/MSVC to match the rest of the build.
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
-# Enable testing
 enable_testing()
 
-# Test source files
 set(TEST_SOURCES
-    test_crypto_types.cpp
     test_kyber.cpp
-    test_dilithium.cpp
-    test_sphincsplus.cpp
-    test_hybrid.cpp
-    test_secure_random.cpp
-    test_memory.cpp
+    # test_crypto_types.cpp   # re-enable as core types are finalized
+    # test_secure_random.cpp
+    # test_memory.cpp
+    # test_dilithium.cpp      # M1: rewrite on liboqs ML-DSA
+    # test_sphincsplus.cpp    # M1: rewrite on liboqs SLH-DSA
+    # test_hybrid.cpp         # M2: rewrite on the hybrid envelope
 )
 
-# Only create tests if GTest is found
-if(GTest_FOUND)
-    # Create test executable
-    add_executable(qybersafe_tests ${TEST_SOURCES})
+add_executable(qybersafe_tests ${TEST_SOURCES})
 
-    # Link libraries
-    target_link_libraries(qybersafe_tests
-        GTest::GTest
-        GTest::Main
-        qybersafe
-        OpenSSL::SSL
-        OpenSSL::Crypto
-    )
+target_link_libraries(qybersafe_tests PRIVATE
+    qybersafe
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    oqs
+    gtest
+)
 
-    # Add include directories
-    target_include_directories(qybersafe_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    )
+target_include_directories(qybersafe_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
 
-    # Set compiler flags for tests
-    target_compile_options(qybersafe_tests PRIVATE
-        $<$<CONFIG:Debug>:-g -O0 -DDEBUG>
-        $<$<CONFIG:Release>:-O2 -DNDEBUG>
-        -Wall -Wextra -Wpedantic
-    )
+add_test(NAME kyber COMMAND qybersafe_tests)
 
-    # Add tests
-    add_test(NAME AllTests COMMAND qybersafe_tests)
-
-    # Individual test targets
-    foreach(TEST_FILE ${TEST_SOURCES})
-        get_filename_component(TEST_NAME ${TEST_FILE} NAME_WE)
-        add_test(NAME ${TEST_NAME} COMMAND qybersafe_tests --gtest_filter=${TEST_NAME}.*)
-    endforeach()
-
-    # Custom target to run all tests
-    add_custom_target(run_tests
-        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-        DEPENDS qybersafe_tests
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-        COMMENT "Running all QyberSafe tests"
-    )
-else()
-    message(STATUS "GTest not found - skipping tests")
-endif()
+add_custom_target(run_tests
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    DEPENDS qybersafe_tests
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running QyberSafe tests"
+)

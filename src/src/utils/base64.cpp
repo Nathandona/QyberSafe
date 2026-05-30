@@ -85,9 +85,10 @@ core::bytes decode_base64(const std::string& base64_str) {
     }
 
     // Validate characters
-    for (char c : clean_str) {
-        if (c != '=' && (c < 0 || c >= 128 || DECODE_TABLE[c] == -1)) {
-            throw std::invalid_argument("Invalid Base64 character: " + std::string(1, c));
+    for (char ch : clean_str) {
+        const unsigned char c = static_cast<unsigned char>(ch);
+        if (ch != '=' && (c >= 128 || DECODE_TABLE[c] == -1)) {
+            throw std::invalid_argument("Invalid Base64 character: " + std::string(1, ch));
         }
     }
 
