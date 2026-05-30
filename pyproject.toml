@@ -56,3 +56,17 @@ BUILD_TESTS = "OFF"
 BUILD_EXAMPLES = "OFF"
 BUILD_DOCUMENTATION = "OFF"
 ENABLE_CLANG_TIDY = "OFF"
+
+[tool.cibuildwheel]
+# musl and PyPy are out of scope for now.
+skip = ["*-musllinux_*", "pp*"]
+build-verbosity = 1
+test-requires = "pytest"
+# Run from a temp dir (cibuildwheel default) so the installed wheel is imported.
+test-command = "python -m pytest {project}/python/tests"
+
+[tool.cibuildwheel.linux]
+# AlmaLinux 8 base: OpenSSL 1.1.1, which has the EVP_PKEY HKDF and X25519 APIs
+# that QyberSafe needs (manylinux2014 / CentOS 7 ships OpenSSL 1.0.2, too old).
+manylinux-x86_64-image = "manylinux_2_28"
+before-all = "dnf install -y openssl-devel"
