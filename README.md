@@ -25,7 +25,7 @@ Classical algorithms such as RSA and ECC are vulnerable to large-scale quantum c
 
 - One small, misuse-resistant API: `seal` / `open` for encryption, `sign` / `verify` for signatures
 - First-class C++17 and Python, sharing a single audited core (liboqs)
-- NIST-standardized algorithms: ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205)
+- NIST-standardized algorithms: ML-KEM (FIPS 203), ML-DSA (FIPS 204), and SPHINCS+ / SLH-DSA (FIPS 205 family)
 - Hybrid encryption by default: X25519 combined with ML-KEM-768, so confidentiality holds even if one half is broken
 - Self-describing, versioned key and ciphertext formats for crypto agility
 - Authenticated encryption (AES-256-GCM) with optional associated data
@@ -36,13 +36,18 @@ Classical algorithms such as RSA and ECC are vulnerable to large-scale quantum c
 
 | Algorithm (alias)     | Type                  | NIST standard | Parameter sets                       |
 |-----------------------|-----------------------|---------------|--------------------------------------|
-| ML-KEM (Kyber)        | Key encapsulation     | FIPS 203      | ML-KEM-512 / 768 / 1024              |
-| ML-DSA (Dilithium)    | Signature             | FIPS 204      | ML-DSA-44 / 65 / 87                  |
-| SLH-DSA (SPHINCS+)    | Hash-based signature  | FIPS 205      | SLH-DSA-SHA2-128s / 192s / 256s      |
-| Hybrid                | Classical + PQC       | -             | X25519 + ML-KEM-768 + AES-256-GCM    |
+| ML-KEM (Kyber)        | Key encapsulation     | FIPS 203        | ML-KEM-512 / 768 / 1024              |
+| ML-DSA (Dilithium)    | Signature             | FIPS 204        | ML-DSA-44 / 65 / 87                  |
+| SPHINCS+ (SLH-DSA)    | Hash-based signature  | FIPS 205 family | SPHINCS+-SHA2-128s / 192s / 256s     |
+| Hybrid                | Classical + PQC       | -               | X25519 + ML-KEM-768 + AES-256-GCM    |
 
 Parameter sets map to roughly 128, 192, and 256 bit security. The defaults
 (ML-KEM-768, ML-DSA-65) suit most workloads.
+
+The hash-based signatures currently use liboqs' SPHINCS+-SHA2 "simple" parameter
+sets (the NIST round-3 submission that FIPS 205 SLH-DSA is based on). The
+FIPS-205 "pure" variant will be adopted once it verifies across all supported
+platforms in liboqs.
 
 ## Installation
 
