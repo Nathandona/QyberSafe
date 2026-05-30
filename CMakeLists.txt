@@ -27,9 +27,12 @@ if(MSVC)
     target_compile_options(qybersafe_warnings INTERFACE /W4 /WX)
     add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
+    # -Wnull-dereference is intentionally omitted: under -O3 it produces false
+    # positives inside libstdc++ (e.g. std::vector copies). Real null
+    # dereferences are caught by the AddressSanitizer/UBSan CI job.
     target_compile_options(qybersafe_warnings INTERFACE
         -Wall -Wextra -Wpedantic -Werror
-        -Wformat=2 -Wformat-security -Wnull-dereference
+        -Wformat=2 -Wformat-security
         $<$<COMPILE_LANGUAGE:CXX>:-Wextra-semi>)
 endif()
 

@@ -20,10 +20,10 @@ set(TEST_SOURCES
     test_kyber.cpp
     test_dilithium.cpp
     test_sphincsplus.cpp
+    test_hybrid.cpp
     # test_crypto_types.cpp   # re-enable as core types are finalized
     # test_secure_random.cpp
     # test_memory.cpp
-    # test_hybrid.cpp         # M2: rewrite on the hybrid envelope
 )
 
 add_executable(qybersafe_tests ${TEST_SOURCES})
