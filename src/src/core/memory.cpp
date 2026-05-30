@@ -12,6 +12,8 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #elif defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX  // do not define min/max macros; they break std::min/std::max
 #include <windows.h>
 #include <malloc.h>
 #endif

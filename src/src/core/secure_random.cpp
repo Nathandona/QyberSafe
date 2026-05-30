@@ -88,13 +88,12 @@ Result<bytes> SecureRandom::get_system_entropy(size_t count) {
         bytes result(count);
         std::random_device rd;
 
-        std::uniform_int_distribution<uint8_t> dist(
-            std::numeric_limits<uint8_t>::min(),
-            std::numeric_limits<uint8_t>::max()
-        );
+        // uniform_int_distribution is not defined for 8-bit types; use a wider
+        // type and narrow the result.
+        std::uniform_int_distribution<unsigned int> dist(0, 255);
 
         for (size_t i = 0; i < count; ++i) {
-            result[i] = dist(rd);
+            result[i] = static_cast<uint8_t>(dist(rd));
         }
 
         return Result<bytes>::success(std::move(result));
