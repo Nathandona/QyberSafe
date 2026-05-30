@@ -56,10 +56,14 @@ as aliases in the API and appear in docs for discoverability.
 |------------------|-------------|-------------------|----------|
 | ML-KEM-512/768/1024 | Kyber512/768/1024 | Key encapsulation | FIPS 203 |
 | ML-DSA-44/65/87  | Dilithium2/3/5 | Signature         | FIPS 204 |
-| SLH-DSA (SHA2/SHAKE, 128/192/256) | SPHINCS+ | Hash-based signature | FIPS 205 |
+| SPHINCS+-SHA2-128s/192s/256s (simple) | SLH-DSA | Hash-based signature | FIPS 205 family |
 
-Defaults: ML-KEM-768, ML-DSA-65, SLH-DSA-SHA2-192s. The README must be updated
-to lead with FIPS names (milestone M5).
+Defaults: ML-KEM-768, ML-DSA-65, SPHINCS+-SHA2-192s-simple.
+
+The hash-based signatures use liboqs' SPHINCS+-SHA2 "simple" parameter sets (the
+NIST round-3 submission underlying FIPS 205 SLH-DSA). liboqs' FIPS-205 "pure"
+SLH-DSA variants are not used yet because they fail to verify under MSVC/Windows
+in liboqs 0.15.0; the "pure" variant will be adopted once that is resolved.
 
 ## 5. Architecture
 

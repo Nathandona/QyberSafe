@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strict compiler warnings are scoped to QyberSafe's own targets, not vendored code.
 - README quick starts and algorithm table updated to the envelope-first API and
   the FIPS algorithm names (ML-KEM, ML-DSA, SLH-DSA).
+- The SLH-DSA family uses liboqs' SPHINCS+-SHA2 "simple" parameter sets; the
+  FIPS-205 "pure" variants do not verify under MSVC/Windows in liboqs 0.15.0.
 
 ### Removed
 - The non-secure "simplified for demonstration" lattice code that stood in for Kyber.
