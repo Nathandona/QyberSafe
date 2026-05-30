@@ -18,11 +18,11 @@ enable_testing()
 
 set(TEST_SOURCES
     test_kyber.cpp
+    test_dilithium.cpp
+    test_sphincsplus.cpp
     # test_crypto_types.cpp   # re-enable as core types are finalized
     # test_secure_random.cpp
     # test_memory.cpp
-    # test_dilithium.cpp      # M1: rewrite on liboqs ML-DSA
-    # test_sphincsplus.cpp    # M1: rewrite on liboqs SLH-DSA
     # test_hybrid.cpp         # M2: rewrite on the hybrid envelope
 )
 
@@ -34,13 +34,14 @@ target_link_libraries(qybersafe_tests PRIVATE
     OpenSSL::Crypto
     oqs
     gtest
+    gtest_main
 )
 
 target_include_directories(qybersafe_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-add_test(NAME kyber COMMAND qybersafe_tests)
+add_test(NAME qybersafe_tests COMMAND qybersafe_tests)
 
 add_custom_target(run_tests
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure

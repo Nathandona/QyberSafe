@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - liboqs vendored through CMake FetchContent (cmake/liboqs.cmake), pinned to 0.15.0.
 - GoogleTest fetched through FetchContent so the C++ test suite is no longer skipped.
 - Real ML-KEM (FIPS 203) key encapsulation backed by liboqs, with a passing test suite.
+- Real ML-DSA (FIPS 204) and SLH-DSA (FIPS 205) signatures backed by liboqs, with
+  rewritten test suites for both.
+- LICENSE file (MIT).
 
 ### Changed
 - Kyber encrypt/decrypt are now an authenticated KEM-DEM (ML-KEM encapsulation,

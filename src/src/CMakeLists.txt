@@ -1,15 +1,15 @@
 # QyberSafe core library.
 #
 # Only modules that have been ported onto liboqs are compiled. The toy
-# dilithium/sphincsplus/hybrid/utils sources remain in the tree but are excluded
-# from the build until their respective milestones rewrite them (see SPEC.md).
+# hybrid/utils sources remain in the tree but are excluded from the build until
+# their respective milestones rewrite them (see SPEC.md).
 add_library(qybersafe STATIC
     core/crypto_types.cpp
     core/secure_random.cpp
     core/memory.cpp
     kyber/kyber_kem.cpp
-    # dilithium/dilithium_sig.cpp        # M1
-    # sphincsplus/sphincsplus_sig.cpp    # M1
+    dilithium/dilithium_sig.cpp
+    sphincsplus/sphincsplus_sig.cpp
     # hybrid/hybrid_encryption.cpp       # M2
     # utils/hex.cpp                       # re-add when needed
     # utils/base64.cpp                    # re-add when needed

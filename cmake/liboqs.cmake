@@ -11,8 +11,10 @@ set(QYBERSAFE_LIBOQS_TAG "0.15.0" CACHE STRING "liboqs git tag to build against"
 
 set(OQS_BUILD_ONLY_LIB ON CACHE BOOL "" FORCE)
 set(OQS_USE_OPENSSL OFF CACHE BOOL "" FORCE)
-# M0 wraps ML-KEM only. Add SIG_ml_dsa_* and SIG_slh_dsa_* in later milestones.
-set(OQS_MINIMAL_BUILD "KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024"
+# Only the algorithms QyberSafe currently wraps: ML-KEM (FIPS 203), ML-DSA
+# (FIPS 204), and SLH-DSA (FIPS 205, "pure" SHA2 small-signature variants).
+set(OQS_MINIMAL_BUILD
+    "KEM_ml_kem_512;KEM_ml_kem_768;KEM_ml_kem_1024;SIG_ml_dsa_44;SIG_ml_dsa_65;SIG_ml_dsa_87;SIG_slh_dsa_pure_sha2_128s;SIG_slh_dsa_pure_sha2_192s;SIG_slh_dsa_pure_sha2_256s"
     CACHE STRING "" FORCE)
 
 FetchContent_Declare(liboqs

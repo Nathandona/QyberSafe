@@ -148,8 +148,3 @@ TEST(KyberTest, SizeHelpers) {
     EXPECT_EQ(get_ciphertext_size(SecurityLevel::KYBER_1024), KYBER_CIPHERTEXT_1024);
     EXPECT_EQ(get_shared_secret_size(), 32u);
 }
-
-int main(int argc, char** argv) {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
-}
