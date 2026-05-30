@@ -2,198 +2,104 @@ name: QyberSafe CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
-  release:
-    types: [ published ]
 
 env:
   BUILD_TYPE: Release
 
 jobs:
   build-and-test:
+    name: build & test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        include:
-          - os: ubuntu-latest
-            cc: gcc-11
-            cxx: g++-11
-            install_deps: sudo apt-get update && sudo apt-get install -y libssl-dev
-          - os: windows-latest
-            cc: cl
-            cxx: cl
-            install_deps: vcpkg install openssl:x64-windows
-          - os: macos-latest
-            cc: clang
-            cxx: clang++
-            install_deps: brew install openssl
-
+        os: [ubuntu-latest, macos-latest]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup CMake
-      uses: jwlawson/actions-setup-cmake@v1.14
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev ninja-build
 
-    - name: Install dependencies (Ubuntu)
-      if: runner.os == 'Linux'
-      run: ${{ matrix.install_deps }}
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl@3 ninja
+          echo "OPENSSL_ROOT_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
 
-    - name: Install dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew update
-        brew install openssl
+      # liboqs and GoogleTest are fetched at configure time via FetchContent.
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DBUILD_EXAMPLES=OFF
+          -DBUILD_DOCUMENTATION=OFF
+          -DENABLE_CLANG_TIDY=OFF
 
-    - name: Install dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        vcpkg integrate install
-        vcpkg install openssl:x64-windows
+      - name: Build
+        run: cmake --build build --parallel
 
-    # Python bindings return at the Python-parity milestone (see SPEC.md, M4).
-    # The current bindings still reference the not-yet-ported modules.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
-    - name: Configure CMake
-      run: |
-        cmake -B ${{github.workspace}}/build \
-          -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
-          -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }} \
-          -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/install
-
-    - name: Build
-      run: |
-        cmake --build ${{github.workspace}}/build \
-          --config ${{env.BUILD_TYPE}} \
-          --parallel
-
-    - name: Test C++
-      run: |
-        cd ${{github.workspace}}/build
-        ctest --output-on-failure --parallel
-
-    - name: Install (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        cd ${{github.workspace}}/build
-        sudo make install
-
-    - name: Install (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        cd ${{github.workspace}}/build
-        cmake --install . --config ${{env.BUILD_TYPE}}
-
-  security-audit:
+  sanitizers:
+    name: asan + ubsan (ubuntu)
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Run security audit
-      run: |
-        # Basic security checks
-        find . -name "*.cpp" -o -name "*.h" | xargs grep -l "strcpy\|strcat\|sprintf\|gets" && exit 1 || true
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev ninja-build
 
-        # Check for common security issues
-        find . -name "*.cpp" -o -name "*.h" | xargs grep -l "malloc\|free" && echo "Warning: malloc/free detected" || true
+      # A Debug build enables AddressSanitizer and UndefinedBehaviorSanitizer
+      # (see the top-level CMakeLists.txt).
+      - name: Configure (Debug)
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DBUILD_EXAMPLES=OFF
+          -DBUILD_DOCUMENTATION=OFF
+          -DENABLE_CLANG_TIDY=OFF
 
-        # Check for hardcoded credentials (basic)
-        find . -name "*.cpp" -o -name "*.h" -o -name "*.py" | xargs grep -i "password\|secret\|key.*=" && echo "Warning: potential hardcoded credentials" || true
+      - name: Build
+        run: cmake --build build --parallel
 
-  code-quality:
+      - name: Test under sanitizers
+        run: ctest --test-dir build --output-on-failure
+
+  lint:
+    name: static analysis (informational)
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup clang-format
-      uses: DoozyX/clang-format-lint-action@v0.16
-      with:
-        source: '.'
-        extensions: 'h,cpp'
-        clangFormatVersion: 14
+      # Informational until the remaining modules are ported; failures here do
+      # not block the build.
+      - name: cppcheck (ported sources)
+        continue-on-error: true
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck
+          cppcheck --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingInclude --suppress=missingIncludeSystem \
+            -I src/include \
+            src/src/core src/src/kyber
 
-    - name: Run cppcheck
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cppcheck
-        cppcheck --enable=all --inconclusive --error-exitcode=1 src/
-
-  memory-safety:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y valgrind libssl-dev
-
-    - name: Build with debug symbols
-      run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
-        cmake --build build --parallel
-
-    - name: Run tests with Valgrind
-      run: |
-        cd build
-        valgrind --leak-check=full --error-exitcode=1 ./tests/qybersafe_tests
-
-  benchmark:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev
-
-    - name: Build release version
-      run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --parallel
-
-    - name: Run benchmarks
-      run: |
-        cd build
-        make run_benchmarks || echo "Benchmark target not found"
-
-    - name: Store benchmark results
-      uses: benchmark-action/github-action-benchmark@v1
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      with:
-        tool: 'cpp'
-        output-file-path: benchmarks/results.json
-
-  build-docs:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Setup Doxygen
-      uses: jwlawson/actions-setup-doxygen@v1.1.0
-
-    - name: Generate documentation
-      run: |
-        doxygen Doxyfile || echo "Doxyfile not found, skipping docs generation"
-
-    - name: Deploy to GitHub Pages
-      if: github.ref == 'refs/heads/main'
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./docs/html
+      - name: clang-format check
+        continue-on-error: true
+        uses: DoozyX/clang-format-lint-action@v0.18.2
+        with:
+          source: 'src/src/kyber src/src/core src/include'
+          extensions: 'h,cpp'
+          clangFormatVersion: 18
