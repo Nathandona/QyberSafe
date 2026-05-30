@@ -38,23 +38,26 @@ set_target_properties(qybersafe PROPERTIES
     PUBLIC_HEADER "../include/qybersafe/qybersafe.h"
 )
 
-# Python bindings are deferred to the Python-parity milestone (SPEC.md, M4).
-# The current bindings.cpp still references the unported modules.
-option(QYBERSAFE_BUILD_PYTHON "Build the pybind11 Python module" OFF)
+# Python bindings (enabled with -DQYBERSAFE_BUILD_PYTHON=ON). The module binds
+# the envelope-first public API and is emitted as `_core` inside the Python
+# package directory so it can be imported in-tree.
 if(QYBERSAFE_BUILD_PYTHON)
-    find_package(pybind11 QUIET)
-    if(pybind11_FOUND)
-        pybind11_add_module(qybersafe_python
-            ../bindings.cpp
-            $<TARGET_OBJECTS:qybersafe>
-        )
-        target_compile_definitions(qybersafe_python PRIVATE VERSION_INFO=${PROJECT_VERSION})
-        target_link_libraries(qybersafe_python PRIVATE qybersafe)
-        set_target_properties(qybersafe_python PROPERTIES
-            OUTPUT_NAME qybersafe
-            SUFFIX "${PYTHON_MODULE_EXTENSION}"
-        )
-    endif()
+    find_package(pybind11 CONFIG REQUIRED)
+    pybind11_add_module(qybersafe_python ../bindings.cpp)
+    target_link_libraries(qybersafe_python PRIVATE
+        qybersafe
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        $<BUILD_INTERFACE:oqs>
+    )
+    target_include_directories(qybersafe_python PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${QYBERSAFE_LIBOQS_INCLUDE_DIR}
+    )
+    set_target_properties(qybersafe_python PROPERTIES
+        OUTPUT_NAME _core
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/python/qybersafe
+    )
 endif()
 
 # Installation
