@@ -132,8 +132,9 @@ Algorithm id registry (uint16):
 | 0x0201 | SLH-DSA-SHA2-192s                |
 | 0x0301 | Hybrid suite: X25519 + ML-KEM-768 + AES-256-GCM |
 
-Body is a sequence of length-prefixed fields (`uint16 length` then bytes). For a
-hybrid envelope (type 5, alg 0x0301) the fields, in order, are:
+Body is a sequence of length-prefixed fields (`uint32 length` then bytes; a
+32-bit length avoids capping payloads at 64 KiB). For a hybrid envelope
+(type 5, alg 0x0301) the fields, in order, are:
 
 1. X25519 ephemeral public key (32 bytes)
 2. ML-KEM-768 ciphertext

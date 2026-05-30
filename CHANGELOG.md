@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real ML-KEM (FIPS 203) key encapsulation backed by liboqs, with a passing test suite.
 - Real ML-DSA (FIPS 204) and SLH-DSA (FIPS 205) signatures backed by liboqs, with
   rewritten test suites for both.
+- Hybrid public-key encryption (suite 0x0301: X25519 + ML-KEM-768 + AES-256-GCM)
+  with an HKDF-SHA-256 combiner and a self-describing, versioned wire format.
 - LICENSE file (MIT).
 
 ### Changed
