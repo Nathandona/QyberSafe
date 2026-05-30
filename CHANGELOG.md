@@ -21,9 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model. The lower-level per-algorithm modules remain available.
 - Associated-data (AAD) support for hybrid encryption / `seal`.
 - Python bindings (pybind11) for the envelope API: `seal`/`open`, `sign`/`verify`,
-  opaque keys with `to_bytes`/`from_bytes`, and a `CryptoError` exception. Built
-  via CMake (`-DQYBERSAFE_BUILD_PYTHON=ON`); a CI job builds the module and runs
-  the pytest suite.
+  opaque keys with `to_bytes`/`from_bytes`, and a `CryptoError` exception.
+- Python packaging via scikit-build-core (pyproject.toml): `pip install .` builds
+  a wheel with liboqs statically bundled. The CI Python job builds and installs
+  the wheel and runs the pytest suite.
 - LICENSE file (MIT).
 
 ### Changed
@@ -32,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Factored the shared symmetric layer (HKDF-SHA-256, CSPRNG, AES-256-GCM) into
   `core/aead` and routed the KEM-DEM and hybrid constructions through it.
 - Strict compiler warnings are scoped to QyberSafe's own targets, not vendored code.
+- README quick starts and algorithm table updated to the envelope-first API and
+  the FIPS algorithm names (ML-KEM, ML-DSA, SLH-DSA).
 
 ### Removed
 - The non-secure "simplified for demonstration" lattice code that stood in for Kyber.

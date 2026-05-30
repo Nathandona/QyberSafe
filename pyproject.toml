@@ -1,0 +1,58 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "qybersafe"
+version = "0.1.0"
+description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "QyberSafe contributors" }]
+keywords = [
+    "cryptography",
+    "post-quantum",
+    "pqc",
+    "ml-kem",
+    "ml-dsa",
+    "slh-dsa",
+    "kyber",
+    "dilithium",
+    "sphincs",
+    "hybrid-encryption",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://github.com/Nathandona/QyberSafe"
+Source = "https://github.com/Nathandona/QyberSafe"
+Issues = "https://github.com/Nathandona/QyberSafe/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.version = ">=3.16"
+# Build only the extension module (and its dependencies); skip tests/examples.
+build.targets = ["qybersafe_python"]
+# Ship the Python package sources alongside the compiled module.
+wheel.packages = ["python/qybersafe"]
+
+[tool.scikit-build.cmake.define]
+QYBERSAFE_BUILD_PYTHON = "ON"
+QYBERSAFE_INSTALL_CXX = "OFF"
+BUILD_TESTS = "OFF"
+BUILD_EXAMPLES = "OFF"
+BUILD_DOCUMENTATION = "OFF"
+ENABLE_CLANG_TIDY = "OFF"

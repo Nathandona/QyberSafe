@@ -23,35 +23,44 @@ Classical algorithms such as RSA and ECC are vulnerable to large-scale quantum c
 
 ## Features
 
-- Simple, modern API for C++17 with first-class Python bindings
-- NIST-standardized algorithms: Kyber (ML-KEM), Dilithium (ML-DSA), SPHINCS+ (SLH-DSA)
-- Drop-in hybrid encryption combining classical (AES-256-GCM) and post-quantum key exchange
-- Crypto agility: change algorithms or security levels with minimal code changes
-- Security-focused design: secure memory zeroing, constant-time operations, side-channel mitigations
-- Cross-platform builds on Linux, macOS, and Windows
-- Continuous integration with sanitizers, Valgrind, and static analysis
+- One small, misuse-resistant API: `seal` / `open` for encryption, `sign` / `verify` for signatures
+- First-class C++17 and Python, sharing a single audited core (liboqs)
+- NIST-standardized algorithms: ML-KEM (FIPS 203), ML-DSA (FIPS 204), SLH-DSA (FIPS 205)
+- Hybrid encryption by default: X25519 combined with ML-KEM-768, so confidentiality holds even if one half is broken
+- Self-describing, versioned key and ciphertext formats for crypto agility
+- Authenticated encryption (AES-256-GCM) with optional associated data
+- Security-focused: audited primitives, secure memory zeroing, no homemade cryptography
+- Continuous integration on Linux and macOS, including an AddressSanitizer/UBSan build
 
 ## Algorithms
 
-| Algorithm  | Type                  | NIST standard | Security levels                  |
-|------------|-----------------------|---------------|----------------------------------|
-| Kyber      | Key encapsulation     | FIPS 203      | Kyber512, Kyber768, Kyber1024    |
-| Dilithium  | Digital signature     | FIPS 204      | Dilithium2, Dilithium3, Dilithium5 |
-| SPHINCS+   | Hash-based signature  | FIPS 205      | SPHINCS128, SPHINCS192, SPHINCS256 |
-| Hybrid     | Classical plus PQC     | -             | AES-256-GCM with Kyber           |
+| Algorithm (alias)     | Type                  | NIST standard | Parameter sets                       |
+|-----------------------|-----------------------|---------------|--------------------------------------|
+| ML-KEM (Kyber)        | Key encapsulation     | FIPS 203      | ML-KEM-512 / 768 / 1024              |
+| ML-DSA (Dilithium)    | Signature             | FIPS 204      | ML-DSA-44 / 65 / 87                  |
+| SLH-DSA (SPHINCS+)    | Hash-based signature  | FIPS 205      | SLH-DSA-SHA2-128s / 192s / 256s      |
+| Hybrid                | Classical + PQC       | -             | X25519 + ML-KEM-768 + AES-256-GCM    |
 
-Each security level maps to roughly 128, 192, and 256 bit quantum resistance. The middle level is the recommended default for most workloads.
+Parameter sets map to roughly 128, 192, and 256 bit security. The defaults
+(ML-KEM-768, ML-DSA-65) suit most workloads.
 
 ## Installation
 
-### Requirements
+Requirements: a C++17 compiler (GCC 11+, Clang, or MSVC), CMake 3.16+, and
+OpenSSL. liboqs is fetched and built automatically. Python 3.8+ is needed for
+the Python package.
 
-- C++17 compiler (GCC 11+, Clang, or MSVC)
-- CMake 3.16 or newer
-- OpenSSL
-- Python 3.8 or newer (for Python bindings)
+### Python
 
-### Build the C++ library
+From a clone (liboqs is statically bundled into the extension):
+
+```bash
+git clone https://github.com/Nathandona/QyberSafe.git
+cd QyberSafe
+pip install .
+```
+
+### C++
 
 ```bash
 git clone https://github.com/Nathandona/QyberSafe.git
@@ -59,15 +68,9 @@ cd QyberSafe
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-sudo cmake --install build
 ```
 
-### Install the Python bindings
-
-```bash
-cd python
-pip install .
-```
+The C++ headers and library install with `cmake --install build`.
 
 ## Quick start
 
@@ -79,36 +82,39 @@ pip install .
 using namespace qybersafe;
 
 int main() {
-    // Key encapsulation with Kyber
-    auto keypair = kyber::generate_keypair(kyber::SecurityLevel::Kyber768);
-
+    // Hybrid encryption (X25519 + ML-KEM-768)
+    auto enc = generate_encryption_keypair();
     bytes message = {'h', 'e', 'l', 'l', 'o'};
-    bytes ciphertext = kyber::encrypt(keypair.public_key(), message);
-    bytes plaintext  = kyber::decrypt(keypair.private_key(), ciphertext);
+    bytes envelope = seal(enc.public_key, message);
+    bytes recovered = open(enc.private_key, envelope);
 
-    // Digital signatures with Dilithium
-    auto signer = dilithium::generate_keypair();
-    bytes signature = dilithium::sign(signer.private_key(), message);
-    bool valid = dilithium::verify(signer.public_key(), message, signature);
+    // Signatures (ML-DSA-65 by default)
+    auto signer = generate_signing_keypair();
+    bytes signature = sign(signer.private_key, message);
+    bool valid = verify(signer.public_key, message, signature);
 
-    return valid ? 0 : 1;
+    return (recovered == message && valid) ? 0 : 1;
 }
 ```
 
 ### Python
 
 ```python
-import qybersafe
+import qybersafe as qs
 
-# Generate a Kyber key pair (Kyber768 by default)
-keypair = qybersafe.generate_keypair()
+# Hybrid encryption, with optional associated data
+enc = qs.generate_encryption_keypair()
+envelope = qs.seal(enc.public_key, b"Hello, post-quantum world!", aad=b"context")
+assert qs.open(enc.private_key, envelope, aad=b"context") == b"Hello, post-quantum world!"
 
-plaintext = b"Hello, post-quantum world!"
-ciphertext = qybersafe.encrypt(keypair.public_key, plaintext)
-decrypted = qybersafe.decrypt(keypair.private_key, ciphertext)
-
-assert decrypted == plaintext
+# Signatures (ML-DSA-65 by default)
+signer = qs.generate_signing_keypair()
+signature = qs.sign(signer.private_key, b"message")
+assert qs.verify(signer.public_key, b"message", signature)
 ```
+
+Operations raise `CryptoError` on failure; `verify` returns a bool. Keys are
+opaque objects that serialize with `to_bytes()` / `from_bytes()`.
 
 ## Why post-quantum
 
@@ -126,13 +132,10 @@ See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Documentation
 
-API reference is generated with Doxygen. Build it locally with:
-
-```bash
-cmake --build build --target docs
-```
-
-Runnable examples for each algorithm live in [src/examples](src/examples).
+The design and wire formats are documented in [SPEC.md](SPEC.md). The test
+suites are usable as examples: [src/tests](src/tests) for C++ and
+[python/tests](python/tests) for Python. API reference can be generated with
+Doxygen via `cmake --build build --target docs`.
 
 ## Contributing
 

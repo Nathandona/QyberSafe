@@ -61,14 +61,16 @@ if(QYBERSAFE_BUILD_PYTHON)
 endif()
 
 # Installation
-install(TARGETS qybersafe
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qybersafe
-)
-
-if(QYBERSAFE_BUILD_PYTHON AND TARGET qybersafe_python)
-    install(TARGETS qybersafe_python
-        LIBRARY DESTINATION ${PYTHON_SITE_PACKAGES}
+if(QYBERSAFE_INSTALL_CXX)
+    install(TARGETS qybersafe
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/qybersafe
     )
+endif()
+
+# The Python extension installs into the package directory; scikit-build-core
+# places it in the wheel under qybersafe/.
+if(QYBERSAFE_BUILD_PYTHON AND TARGET qybersafe_python)
+    install(TARGETS qybersafe_python LIBRARY DESTINATION qybersafe)
 endif()
