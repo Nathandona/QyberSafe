@@ -13,8 +13,11 @@ on:
     types: [published]
 
 jobs:
+  # Binary wheels are still being brought up (static OpenSSL linking). For now
+  # they are built only on manual dispatch and do not gate publishing.
   linux:
     name: wheels (manylinux x86_64)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -23,8 +26,6 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21
         env:
-          # Phase 1: a couple of CPython versions on manylinux to validate the
-          # pipeline. Widened to the full range and to macOS/Windows next.
           CIBW_BUILD: "cp311-manylinux_x86_64 cp312-manylinux_x86_64"
 
       - name: Upload wheels
@@ -32,3 +33,37 @@ jobs:
         with:
           name: wheels-linux
           path: wheelhouse/*.whl
+
+  sdist:
+    name: sdist
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build sdist
+        run: pipx run build --sdist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    name: publish to PyPI
+    if: github.event_name == 'release'
+    needs: [sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC for PyPI Trusted Publishing
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
