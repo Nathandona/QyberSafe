@@ -83,3 +83,9 @@ make install_sw
 environment = { OPENSSL_ROOT_DIR = "/opt/ossl", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON" }
 # Verbose repair lists offending symbols if auditwheel cannot retarget the ABI.
 repair-wheel-command = "auditwheel -v repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+# Homebrew's openssl@3 ships static libraries; link them in so the wheel is
+# self-contained (macOS uses the stable system libc++, so no libstdc++ concern).
+before-all = "brew install openssl@3"
+environment = { OPENSSL_ROOT_DIR = "$(brew --prefix openssl@3)", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON", MACOSX_DEPLOYMENT_TARGET = "11.0" }
