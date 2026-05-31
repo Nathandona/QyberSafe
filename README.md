@@ -4,10 +4,10 @@
 
 <p align="center">
   <a href="https://github.com/Nathandona/QyberSafe/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Nathandona/QyberSafe/ci.yml?branch=main&style=flat-square&label=build&logo=github&logoColor=white" alt="Build status"></a>
-  <img src="https://img.shields.io/badge/version-0.1.0--alpha-38bdf8?style=flat-square" alt="Version">
+  <a href="https://pypi.org/project/qybersafe/"><img src="https://img.shields.io/pypi/v/qybersafe?style=flat-square&color=38bdf8&label=PyPI" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/license-MIT-3b82f6?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/C%2B%2B-17-00599C?style=flat-square&logo=cplusplus&logoColor=white" alt="C++17">
-  <img src="https://img.shields.io/badge/Python-3.8%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.8+">
+  <img src="https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-475569?style=flat-square" alt="Platforms">
   <img src="https://img.shields.io/badge/NIST-FIPS%20203%20%2F%20204%20%2F%20205-1e293b?style=flat-square" alt="NIST FIPS">
   <img src="https://img.shields.io/badge/PRs-welcome-6366f1?style=flat-square" alt="PRs welcome">
@@ -51,21 +51,22 @@ platforms in liboqs.
 
 ## Installation
 
-Requirements: a C++17 compiler (GCC 11+, Clang, or MSVC), CMake 3.16+, and
-OpenSSL. liboqs is fetched and built automatically. Python 3.8+ is needed for
-the Python package.
-
 ### Python
 
-From a clone (liboqs is statically bundled into the extension):
+Prebuilt wheels (no compiler required) are published for Linux, macOS (Apple
+Silicon), and Windows on CPython 3.9 to 3.13:
 
 ```bash
-git clone https://github.com/Nathandona/QyberSafe.git
-cd QyberSafe
-pip install .
+pip install qybersafe
 ```
 
+On other platforms pip builds from the source distribution, which needs a C++17
+compiler and OpenSSL (liboqs is fetched automatically).
+
 ### C++
+
+Requirements: a C++17 compiler (GCC 11+, Clang, or MSVC), CMake 3.16+, and
+OpenSSL. liboqs is fetched and built automatically.
 
 ```bash
 git clone https://github.com/Nathandona/QyberSafe.git
