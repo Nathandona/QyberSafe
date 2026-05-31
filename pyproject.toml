@@ -58,8 +58,8 @@ BUILD_DOCUMENTATION = "OFF"
 ENABLE_CLANG_TIDY = "OFF"
 
 [tool.cibuildwheel]
-# musl and PyPy are out of scope for now.
-skip = ["*-musllinux_*", "pp*"]
+# Out of scope: musl, PyPy, and 32-bit targets.
+skip = ["*-musllinux_*", "pp*", "*_i686", "*-win32"]
 build-verbosity = 1
 test-requires = "pytest"
 # Run from a temp dir (cibuildwheel default) so the installed wheel is imported.
