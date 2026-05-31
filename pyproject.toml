@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "qybersafe"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -66,9 +66,20 @@ test-requires = "pytest"
 test-command = "python -m pytest {project}/python/tests"
 
 [tool.cibuildwheel.linux]
-# AlmaLinux 8 base: OpenSSL 1.1.1, which has the EVP_PKEY HKDF and X25519 APIs
-# that QyberSafe needs (manylinux2014 / CentOS 7 ships OpenSSL 1.0.2, too old).
 manylinux-x86_64-image = "manylinux_2_28"
-before-all = "dnf install -y openssl-devel"
+# Build OpenSSL as static libraries and link them into the extension, so the
+# wheel carries no shared libcrypto. A bundled shared libcrypto clashes with the
+# one CPython itself loads (hashlib/ssl), which broke the EVP HKDF path at
+# runtime ("HKDF setup failed"). Static linking with hidden visibility isolates
+# our OpenSSL entirely.
+before-all = """
+dnf install -y perl-IPC-Cmd perl-Data-Dumper
+curl -sSL https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz -o /tmp/openssl.tar.gz
+cd /tmp && tar xf openssl.tar.gz && cd openssl-3.0.16
+./Configure no-shared no-tests --prefix=/opt/ossl --libdir=lib linux-x86_64
+make -j"$(nproc)"
+make install_sw
+"""
+environment = { OPENSSL_ROOT_DIR = "/opt/ossl", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON" }
 # Verbose repair lists offending symbols if auditwheel cannot retarget the ABI.
 repair-wheel-command = "auditwheel -v repair -w {dest_dir} {wheel}"

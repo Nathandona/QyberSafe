@@ -17,7 +17,6 @@ jobs:
   # they are built only on manual dispatch and do not gate publishing.
   linux:
     name: wheels (manylinux x86_64)
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -53,7 +52,7 @@ jobs:
   publish:
     name: publish to PyPI
     if: github.event_name == 'release'
-    needs: [sdist]
+    needs: [sdist, linux]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
