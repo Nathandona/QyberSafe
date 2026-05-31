@@ -7,7 +7,7 @@ name = "qybersafe"
 version = "0.1.0a3"
 description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "QyberSafe contributors" }]
 keywords = [
