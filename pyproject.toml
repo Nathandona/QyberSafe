@@ -4,10 +4,10 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "qybersafe"
-version = "0.1.0a2"
+version = "0.1.0a3"
 description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "QyberSafe contributors" }]
 keywords = [
@@ -58,8 +58,8 @@ BUILD_DOCUMENTATION = "OFF"
 ENABLE_CLANG_TIDY = "OFF"
 
 [tool.cibuildwheel]
-# musl and PyPy are out of scope for now.
-skip = ["*-musllinux_*", "pp*"]
+# Out of scope: musl, PyPy, and 32-bit targets.
+skip = ["*-musllinux_*", "pp*", "*_i686", "*-win32"]
 build-verbosity = 1
 test-requires = "pytest"
 # Run from a temp dir (cibuildwheel default) so the installed wheel is imported.
@@ -73,7 +73,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 # runtime ("HKDF setup failed"). Static linking with hidden visibility isolates
 # our OpenSSL entirely.
 before-all = """
-dnf install -y perl-IPC-Cmd perl-Data-Dumper
+( command -v dnf >/dev/null 2>&1 && dnf install -y perl-IPC-Cmd perl-Data-Dumper ) || ( command -v microdnf >/dev/null 2>&1 && microdnf install -y perl-IPC-Cmd perl-Data-Dumper ) || yum install -y perl-IPC-Cmd perl-Data-Dumper
 curl -sSL https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz -o /tmp/openssl.tar.gz
 cd /tmp && tar xf openssl.tar.gz && cd openssl-3.0.16
 ./Configure no-shared no-tests --prefix=/opt/ossl --libdir=lib linux-x86_64
@@ -83,3 +83,9 @@ make install_sw
 environment = { OPENSSL_ROOT_DIR = "/opt/ossl", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON" }
 # Verbose repair lists offending symbols if auditwheel cannot retarget the ABI.
 repair-wheel-command = "auditwheel -v repair -w {dest_dir} {wheel}"
+
+[tool.cibuildwheel.macos]
+# Homebrew's openssl@3 ships static libraries; link them in so the wheel is
+# self-contained (macOS uses the stable system libc++, so no libstdc++ concern).
+before-all = "brew install openssl@3"
+environment = { OPENSSL_ROOT_DIR = "$(brew --prefix openssl@3)", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON", MACOSX_DEPLOYMENT_TARGET = "11.0" }

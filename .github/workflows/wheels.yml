@@ -15,22 +15,24 @@ on:
 jobs:
   # Binary wheels are still being brought up (static OpenSSL linking). For now
   # they are built only on manual dispatch and do not gate publishing.
-  linux:
-    name: wheels (manylinux x86_64)
-    runs-on: ubuntu-latest
+  wheels:
+    name: wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.21
-        env:
-          CIBW_BUILD: "cp311-manylinux_x86_64 cp312-manylinux_x86_64"
 
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: wheels-linux
+          name: wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
 
   sdist:
@@ -52,7 +54,7 @@ jobs:
   publish:
     name: publish to PyPI
     if: github.event_name == 'release'
-    needs: [sdist, linux]
+    needs: [sdist, wheels]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
