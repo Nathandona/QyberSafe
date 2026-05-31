@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "qybersafe"
-version = "0.1.0a3"
+version = "0.1.0a4"
 description = "Post-quantum cryptography for Python: ML-KEM, ML-DSA, SLH-DSA, and hybrid encryption"
 readme = "README.md"
 requires-python = ">=3.9"
