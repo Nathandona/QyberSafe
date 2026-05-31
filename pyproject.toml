@@ -89,3 +89,10 @@ repair-wheel-command = "auditwheel -v repair -w {dest_dir} {wheel}"
 # self-contained (macOS uses the stable system libc++, so no libstdc++ concern).
 before-all = "brew install openssl@3"
 environment = { OPENSSL_ROOT_DIR = "$(brew --prefix openssl@3)", CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON", MACOSX_DEPLOYMENT_TARGET = "11.0" }
+
+[tool.cibuildwheel.windows]
+# Static OpenSSL via vcpkg (x64-windows-static-md: static libs, dynamic CRT to
+# match CPython). Static linking keeps the wheel self-contained, as on the
+# other platforms.
+before-all = "vcpkg install openssl:x64-windows-static-md"
+environment = { CMAKE_ARGS = "-DOPENSSL_USE_STATIC_LIBS=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows-static-md" }
