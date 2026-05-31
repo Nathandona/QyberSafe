@@ -17,7 +17,9 @@ jobs:
   # they are built only on manual dispatch and do not gate publishing.
   linux:
     name: wheels (manylinux x86_64)
-    if: github.event_name == 'workflow_dispatch'
+    # Run on PRs and manual dispatch while binary wheels are brought up; not on
+    # release yet, so they do not gate publishing.
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
