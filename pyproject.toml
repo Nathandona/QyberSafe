@@ -73,6 +73,7 @@ manylinux-x86_64-image = "manylinux_2_28"
 # runtime ("HKDF setup failed"). Static linking with hidden visibility isolates
 # our OpenSSL entirely.
 before-all = """
+dnf install -y perl-IPC-Cmd perl-Data-Dumper
 curl -sSL https://github.com/openssl/openssl/releases/download/openssl-3.0.16/openssl-3.0.16.tar.gz -o /tmp/openssl.tar.gz
 cd /tmp && tar xf openssl.tar.gz && cd openssl-3.0.16
 ./Configure no-shared no-tests --prefix=/opt/ossl --libdir=lib linux-x86_64
